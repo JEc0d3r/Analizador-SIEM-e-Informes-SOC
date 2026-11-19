@@ -71,5 +71,4 @@ Al ser una aplicación autocontenida (*client-side*), no requiere servidores, ba
 
 1. Clona el repositorio:
    ```bash
-   git clone [https://github.com/TU_USUARIO/TU_REPOSITORIO.git](https://github.com/TU_USUARIO/TU_REPOSITORIO.git)
-   cd TU_REPOSITORIO
+   git clone https://github.com/JEc0d3r/Analizador-SIEM-e-Informes-SOC.git
