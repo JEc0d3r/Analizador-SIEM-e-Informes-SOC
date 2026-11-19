@@ -72,3 +72,10 @@ Al ser una aplicación autocontenida (*client-side*), no requiere servidores, ba
 1. Clona el repositorio:
    ```bash
    git clone https://github.com/JEc0d3r/Analizador-SIEM-e-Informes-SOC.git
+
+### Autor y Créditos
+Autor: (Jec0d3r)
+
+Desarrollo Asistido por IA: Estructurado y refinado con el apoyo del modelo Gemini como asistente de ingeniería de software.
+
+Agradecimientos: Comunidad DOJO y WoSEC Panamá por la formación técnica impartida en el Bootcamp Analista SOC Nivel 2.
